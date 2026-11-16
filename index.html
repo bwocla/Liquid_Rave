@@ -28,8 +28,25 @@
     background: #0a0c14; border-left: 1px solid var(--line); -webkit-user-select: none; user-select: none; }
   #panel.closed { width: 0; padding: 0; border: 0; }                 /* hidden: only the "Controls" button is left */
   /* the Controls / Hide controls button floats over the top left corner of the visuals, in every layout */
-  #bar { position: fixed; z-index: 2; top: calc(8px + env(safe-area-inset-top, 0px)); left: calc(8px + env(safe-area-inset-left, 0px)); }
-  #toggle { white-space: nowrap; background: rgba(10,12,20,.8); }
+  #bar { position: fixed; z-index: 2; top: calc(8px + env(safe-area-inset-top, 0px)); left: calc(8px + env(safe-area-inset-left, 0px));
+    display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  #bar button { height: 26px; border-radius: 6px; background: rgba(10,12,20,.8); }
+  #bHelp { padding: 0 8px; font-size: 11.5px; }
+  #toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; padding: 0; }
+  #toggle[aria-expanded=true] .in, #toggle[aria-expanded=false] .out { display: none; }   /* arrows out = go full screen, arrows in = back */
+  /* Help: a full-screen sheet over everything */
+  #help { position: fixed; inset: 0; z-index: 10; overflow-y: auto; -webkit-overflow-scrolling: touch; background: rgba(5,6,11,.97);
+    padding: calc(14px + env(safe-area-inset-top, 0px)) calc(18px + env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) calc(18px + env(safe-area-inset-left, 0px)); }
+  #help[hidden] { display: none; }
+  #help .sheet { max-width: 560px; margin: 0 auto; font-size: 13.5px; line-height: 1.42; }
+  #help header { display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: 0; padding: 4px 0 6px; background: rgba(5,6,11,.97); }
+  #help h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  #help h2 { margin: 13px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  #help p { margin: 0 0 8px; color: var(--dim); }
+  #help ul { margin: 0; padding-left: 18px; }
+  #help li { margin: 0 0 3px; }
+  #help b { font-weight: 600; color: #fff; }
+  #helpClose { height: 30px; padding: 0 14px; border-radius: 6px; }
   #body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; }
   /* The panel's content lives in two groups. In the default (wide / landscape) layout the groups
      dissolve and their parts stack in one column, in this order: */
@@ -95,7 +112,6 @@
     canvas.morph { transition: height .45s cubic-bezier(.4, 0, .2, 1); }   /* glide to a new height (see morphCanvas) */
     #body::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 320px; background: #0a0c14; }   /* keeps the screen bottom covered while the block slides up */
     #panel, #panel.closed { position: static; display: block; width: auto; padding: 0; background: none; border: 0; }
-    #toggle { height: 28px; padding: 0 10px; border-radius: 6px; background: rgba(10,12,20,.8); }
     #body { position: fixed; z-index: 2; left: 0; right: 0; bottom: 0; overflow: visible;
       padding: 0 6px calc(8px + env(safe-area-inset-bottom, 0px)); border: 0; border-top: 1px solid var(--line); background: #0a0c14;
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; align-items: start; }
@@ -168,7 +184,11 @@
 
 <div id="panel">
   <div id="bar">
-    <button id="toggle" aria-expanded="true" aria-controls="body">Hide controls</button>
+    <button id="bHelp" aria-haspopup="dialog">Help</button>
+    <!-- full screen: hides every control so the visuals get the whole screen; tap again to bring them back -->
+    <button id="toggle" aria-expanded="true" aria-controls="body" aria-label="Full screen: hide the controls">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="out" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/><path class="in" d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>
+    </button>
   </div>
   <div id="body">
     <!-- Group A: tabs, what a touch adds (or the fluid styles), then Acid bassline and Clear -->
@@ -252,6 +272,52 @@
   </div>
 </div>
 
+<!-- Help: tips and tricks, opened with the Help button -->
+<div id="help" role="dialog" aria-modal="true" aria-labelledby="helpTitle" hidden>
+  <div class="sheet">
+    <header><h1 id="helpTitle">How to play</h1><button id="helpClose">Close</button></header>
+    <p>Touch to paint and play. Everything loops on the beat, then fades.</p>
+
+    <h2>Play</h2>
+    <ul>
+      <li><b>Touch the visuals</b> to add sound. Use more fingers.</li>
+      <li><b>Higher up</b> is a higher note.</li>
+      <li><b>Trance synth:</b> hold and slide.</li>
+      <li><b>Vocal chops:</b> left, middle, right sing oh, ah, ey.</li>
+    </ul>
+
+    <h2>Elements</h2>
+    <ul>
+      <li><b>Blue</b> is what you play. <b>Amber</b> is still sounding.</li>
+      <li><b>Auto change:</b> a new element every 4 bars.</li>
+      <li><b>Loop all:</b> nothing fades until you clear.</li>
+      <li><b>Hold an element</b> to loop only that one (↻).</li>
+      <li><b>Clear</b> fades out all you added.</li>
+    </ul>
+
+    <h2>Drums</h2>
+    <ul>
+      <li><b>9 kits,</b> from soft to hardcore.</li>
+      <li><b>Pink pills</b> switch drums, bassline and hi-hats.</li>
+      <li><b>Auto-Break:</b> tap for a break now. Hold to stop or restart the automatic ones.</li>
+      <li><b>Arrow next to Drums</b> hides the drum controls.</li>
+    </ul>
+
+    <h2>Visuals</h2>
+    <ul>
+      <li><b>Fluid tab:</b> 15 styles.</li>
+      <li><b>Drift</b> changes the style by itself.</li>
+      <li><b>Arrow icon under Help:</b> full screen.</li>
+    </ul>
+
+    <h2>Tips</h2>
+    <ul>
+      <li><b>No sound?</b> Touch the screen and turn up the volume.</li>
+      <li>Loop a bassline, add a melody, play on top.</li>
+      <li>Tap Break, Clear in the build-up, come back on the drop.</li>
+    </ul>
+  </div>
+</div>
 <div id="msg" hidden><div>
   <h1>This needs WebGL</h1>
   <p id="msgText">The fluid runs on your graphics card, and this browser or device can’t render to floating-point textures. Try a current version of Chrome, Firefox or Safari, and check that hardware acceleration is switched on.</p>
@@ -2330,7 +2396,7 @@ const uprightPhone = window.matchMedia('(orientation: portrait) and (max-width: 
 function setPanel(open) {
   morphCanvas();
   $('panel').classList.toggle('closed', !open);
-  $('toggle').textContent = open ? 'Hide controls' : 'Controls';
+  $('toggle').setAttribute('aria-label', open ? 'Full screen: hide the controls' : 'Show the controls');
   $('toggle').setAttribute('aria-expanded', open);
   syncDock();
 }
@@ -2347,6 +2413,10 @@ if (window.ResizeObserver) new ResizeObserver(syncDock).observe($('body'));
 window.addEventListener('resize', syncDock);
 syncDock();
 $('toggle').addEventListener('click', e => { setPanel($('panel').classList.contains('closed')); e.currentTarget.blur(); });
+// Help: a full-screen sheet with tips. The music keeps playing underneath.
+function setHelp(open) { $('help').hidden = !open; if (open) { $('help').scrollTop = 0; $('helpClose').focus(); } else $('bHelp').blur(); }
+$('bHelp').addEventListener('click', () => setHelp(true));
+$('helpClose').addEventListener('click', () => setHelp(false));
 
 // Sound has no on-screen switch any more; the M key still mutes and unmutes.
 function toggleSound() { config.sound = !config.sound; audio.unlock(); audio.sync(); }
@@ -2474,6 +2544,7 @@ function togglePause() { paused = !paused; audio.sync(); }   // Space bar only; 
 $('bClear').addEventListener('click', e => { if (gl) clearAll(); e.currentTarget.blur(); });
 
 window.addEventListener('keydown', e => {
+  if (!$('help').hidden) { if (e.code === 'Escape') setHelp(false); return; }   // no shortcuts while Help is open
   if (!gl || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) togglePause(); }
   else if (e.code === 'KeyR') burst(6 + Math.floor(Math.random() * 6));
