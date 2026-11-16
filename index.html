@@ -99,6 +99,18 @@
   /* on/off switches (Auto change, Loop all) are tinted violet so they read differently from the element buttons */
   .kinds button.switch { background: rgba(180,140,255,.18); border-color: rgba(180,140,255,.5); }
   .kinds button.switch[aria-pressed=true] { background: #b48cff; border-color: #b48cff; color: #120a24; font-weight: 600; }
+  /* Record button, next to "Drums": red dot = record, pulsing square = recording (tap to stop),
+     down arrow = a finished recording is waiting to be saved (tap to save, hold to throw it away). */
+  #bRec { flex: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 30px; height: 22px; padding: 0; margin-left: auto;
+    background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 5px; color: var(--text); touch-action: manipulation; -webkit-touch-callout: none; }
+  #bRec .dot { width: 10px; height: 10px; border-radius: 50%; background: #ff4d4d; }
+  #bRec svg { display: none; }
+  #bRec[aria-pressed=true] { background: #ff4d4d; border-color: #ff4d4d; animation: breakPulse 1s ease-in-out infinite; }
+  #bRec[aria-pressed=true] .dot { border-radius: 2px; background: #fff; }
+  #bRec.saved { background: var(--accent); border-color: var(--accent); color: #04121c; }
+  #bRec.saved .dot { display: none; }
+  #bRec.saved svg { display: block; }
+  #drumsHead { display: flex; align-items: center; }
   #tabDrums, #drumsMin { display: none; }                          /* minimising the drums only exists in the upright-phone layout */
   .actions { display: flex; gap: 6px; margin-top: 10px; }
   .actions button { flex: 1; padding: 4px 0; }
@@ -145,7 +157,8 @@
     #body.nodrums .tabs { display: grid; grid-template-columns: calc((100% - 8px) / 4) calc((100% - 8px) / 4) minmax(0, 1fr); }   /* Sound and Fluid keep their width */
     #body.nodrums { grid-template-columns: minmax(0, 1fr); }
     #body.nodrums #colB, #body.nodrums.fluid #colB { display: none; }
-    #body.nodrums #tabDrums { display: flex; align-items: center; justify-content: space-between; padding: 0 0 0 8px; border-bottom: 0; color: var(--text); }
+    #body.nodrums #tabDrums { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; height: 100%; padding: 0 0 0 8px; color: var(--text); cursor: pointer; }
+    #bRec { margin-right: 6px; }
     #body.nodrums #kinds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     /* bottom row: Acid bassline (one column wide), the pills, and a narrow Clear */
     #body.nodrums #footA { display: flex; gap: 4px; align-items: center; }
@@ -196,7 +209,7 @@
       <div class="tabs" role="tablist">
         <button role="tab" id="tabSound" aria-controls="paneSound" aria-selected="true">Sound</button>
         <button role="tab" id="tabFluid" aria-controls="paneFluid" aria-selected="false">Fluid</button>
-        <button id="tabDrums" aria-controls="colB" aria-expanded="false"><span>Drums</span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></span></button>
+        <div id="tabDrums" role="button" tabindex="0" aria-controls="colB" aria-expanded="false"><span>Drums</span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></span></div>
       </div>
       <div id="paneSound" role="tabpanel" aria-labelledby="tabSound">
         <div class="kinds" id="kinds">
@@ -244,7 +257,7 @@
     </div>
     <!-- Group B: the backing track -->
     <div id="colB">
-      <div class="row" id="drumsHead"><span>Drums</span><button id="drumsMin" aria-label="Minimise drums" aria-controls="colB" aria-expanded="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></div>
+      <div class="row" id="drumsHead"><span>Drums</span><!-- record: moves into #tabDrums while the drums are minimised (see placePills) --><button id="bRec" aria-pressed="false" aria-label="Record the sound"><span class="dot"></span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg></button><button id="drumsMin" aria-label="Minimise drums" aria-controls="colB" aria-expanded="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></div>
       <div class="kinds three" id="kits">
         <button data-kit="6" aria-pressed="false">Velvet</button>
         <button data-kit="0" aria-pressed="false">Soft</button>
@@ -301,6 +314,7 @@
       <li><b>Pink pills</b> switch drums, bassline and hi-hats.</li>
       <li><b>Auto-Break:</b> tap for a break now. Hold to stop or restart the automatic ones.</li>
       <li><b>Arrow next to Drums</b> hides the drum controls.</li>
+      <li><b>Red dot:</b> record. Tap again to stop and save.</li>
     </ul>
 
     <h2>Visuals</h2>
@@ -1446,7 +1460,7 @@ const audio = (function () {
     { f0: 380, f1: 62, sweep: 0.05, dur: 0.16, gain: 1.00, click: 0.40, pre: 9.00, rumble: 0,    hat: 1.20, bounce: 62 }   // Hardcore (frenchcore: very short hard kick, distorted bass note on the offbeat)
   ];
   const saturation = pre => Math.tanh(2.5 * Math.min(1, pre)) / Math.tanh(2.5);
-  let chain, acidCurve;                                              // the current touch-sound chain (see touchChain)
+  let chain, acidCurve, outNode, recorder = null;                                             // the current touch-sound chain (see touchChain)
   let breakAt = -1, inBreak = false, breakNow = false, breakForced = false;                                 // bar where the next break starts
 
   let ctx, master, drums, layerBus, dryBus, duck, echoFb, echoDelay, acidIn, tb, hatBus, bassShelf, kickPre, kickPost, rumbleSend, rumbleDelay, rumbleDuck, noise, timer = 0, next = 0, step = 0;
@@ -1463,7 +1477,7 @@ const audio = (function () {
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 6; comp.attack.value = 0.005; comp.release.value = 0.15;
     master = ctx.createGain(); master.gain.value = 0.8;                // full level: loudness is set with the device's own volume
-    master.connect(comp); comp.connect(ctx.destination);
+    master.connect(comp); comp.connect(ctx.destination); outNode = comp;
     // backing track bus -> low shelf (the Bass slider) -> master
     drums = ctx.createGain(); bassShelf = ctx.createBiquadFilter();
     bassShelf.type = 'lowshelf'; bassShelf.frequency.value = 130; bassShelf.gain.value = (config.bass - 1) * 12;
@@ -2218,6 +2232,23 @@ const audio = (function () {
   }
   return { note, slide, release, motion, sync, unlock, refresh, relock, levels,
     startBreak() { unlock(); if (ctx && !inBreak) breakNow = true; },
+    // Record everything that goes to the speakers. recordStart() returns false when the browser cannot
+    // record; recordStop() resolves with the finished audio as a Blob.
+    recordStart() {
+      unlock();
+      if (!ctx || !window.MediaRecorder || recorder) return false;
+      // AAC in an .m4a plays everywhere (and is what iPhones record); otherwise fall back to WebM
+      const type = ['audio/mp4;codecs=mp4a.40.2', 'audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find(t => MediaRecorder.isTypeSupported(t));
+      if (!type) return false;
+      const tap = ctx.createMediaStreamDestination(), chunks = [];
+      outNode.connect(tap);
+      const r = new MediaRecorder(tap.stream, { mimeType: type, audioBitsPerSecond: 192000 });
+      r.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      recorder = { r, done: new Promise(res => { r.onstop = () => { outNode.disconnect(tap); res(new Blob(chunks, { type: type.split(';')[0] })); }; }) };
+      r.start(1000);
+      return true;
+    },
+    recordStop() { const x = recorder; recorder = null; if (!x) return Promise.resolve(null); x.r.stop(); return x.done; },
     replanBreak() { if (ctx) planBreak(Math.floor(step / 16)); },    // automatic breaks switched back on: count from now
     get breaking() { return inBreak || breakNow; }, clear, get steps() { return step; } };
 })();
@@ -2434,6 +2465,8 @@ function showTab(name) {
 function placePills() {
   const mini = $('body').classList.contains('nodrums') && uprightPhone.matches;
   if (mini) $('footA').insertBefore($('pills'), $('bClear')); else $('pillSlot').appendChild($('pills'));
+  // the record button keeps its place just left of the arrow, in whichever Drums header is showing
+  if (mini) $('tabDrums').insertBefore($('bRec'), $('tabDrums').lastElementChild); else $('drumsHead').insertBefore($('bRec'), $('drumsMin'));
 }
 uprightPhone.addEventListener('change', placePills);
 function setDrums(show, instant) {
@@ -2452,6 +2485,51 @@ function setDrums(show, instant) {
 }
 $('drumsHead').addEventListener('click', () => { if (uprightPhone.matches) setDrums(false); $('drumsMin').blur(); });
 $('tabDrums').addEventListener('click', e => { setDrums(true); e.currentTarget.blur(); });
+$('tabDrums').addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); e.stopPropagation(); setDrums(true); } });
+
+// Record button. Tap: start. Tap again: stop and save (the share sheet on a phone, where "Save to
+// Files" lives; a download elsewhere). If saving did not happen, the recording waits on the button:
+// tap to save it, press and hold to throw it away.
+{
+  const b = $('bRec');
+  let take = null, timer = 0, held = false;                          // take = a finished recording not saved yet
+  const show = () => {
+    b.classList.toggle('saved', !!take);
+    b.setAttribute('aria-label', take ? 'Save the recording (hold to discard it)' : b.getAttribute('aria-pressed') === 'true' ? 'Stop recording' : 'Record the sound');
+  };
+  async function save() {
+    const file = new File([take.blob], take.name, { type: take.blob.type });
+    if (window.matchMedia('(pointer: coarse)').matches && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); } catch (e) { return; }   // cancelled or not allowed: keep it for another try
+    } else {
+      const a = document.createElement('a'), url = URL.createObjectURL(take.blob);
+      a.href = url; a.download = take.name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+    take = null; show();
+  }
+  b.addEventListener('pointerdown', () => {
+    held = false; clearTimeout(timer);
+    if (take) timer = setTimeout(() => { held = true; take = null; show(); }, 700);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, () => clearTimeout(timer)));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+  b.addEventListener('keydown', e => e.stopPropagation());
+  b.addEventListener('click', async e => {
+    e.stopPropagation(); b.blur();                                   // not a tap on the Drums header
+    if (held) { held = false; return; }
+    if (take) return save();
+    if (b.getAttribute('aria-pressed') === 'true') {
+      b.setAttribute('aria-pressed', 'false');
+      const blob = await audio.recordStop();
+      if (!blob || !blob.size) return show();
+      const d = new Date(), two = n => String(n).padStart(2, '0');
+      const stamp = d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()) + ' ' + two(d.getHours()) + '.' + two(d.getMinutes()) + '.' + two(d.getSeconds());
+      take = { blob, name: 'Liquid Rave ' + stamp + (blob.type.includes('mp4') ? '.m4a' : '.webm') };
+      show(); save();
+    } else if (audio.recordStart()) { b.setAttribute('aria-pressed', 'true'); show(); }
+  });
+}
 try { if (localStorage.getItem('drumsMin')) setDrums(false, true); } catch (e) {}
 $('tabSound').addEventListener('click', e => { showTab('Sound'); e.currentTarget.blur(); });
 $('tabFluid').addEventListener('click', e => { showTab('Fluid'); e.currentTarget.blur(); });
