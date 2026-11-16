@@ -1,0 +1,2573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Liquid Rave</title>
+<!-- Installable web app: full screen from the home screen, own icon, works offline -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#05060b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Liquid Rave">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+  :root { color-scheme: dark; --ink: #05060b; --text: #d9dde8; --dim: #8b91a3; --line: rgba(255,255,255,.12); --accent: #7fd4ff; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--ink); color: var(--text);
+    font: 12px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  /* Wide / landscape: the controls are a solid panel along the right edge and the canvas ends where
+     it begins (--side = the panel's width, set from script; 0 while the controls are hidden). */
+  canvas { position: fixed; inset: 0; width: calc(100% - var(--side, 0px)); height: 100%; display: block;
+    touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: crosshair; }
+
+  canvas.morph { transition: width .45s cubic-bezier(.4, 0, .2, 1); }   /* glide when the panel is hidden or shown */
+  #panel { position: fixed; top: 0; right: 0; bottom: 0; box-sizing: border-box; width: calc(233px + env(safe-area-inset-right, 0px));
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 0; display: flex; flex-direction: column;
+    background: #0a0c14; border-left: 1px solid var(--line); -webkit-user-select: none; user-select: none; }
+  #panel.closed { width: 0; padding: 0; border: 0; }                 /* hidden: only the "Controls" button is left */
+  /* the Controls / Hide controls button floats over the top left corner of the visuals, in every layout */
+  #bar { position: fixed; z-index: 2; top: calc(8px + env(safe-area-inset-top, 0px)); left: calc(8px + env(safe-area-inset-left, 0px)); }
+  #toggle { white-space: nowrap; background: rgba(10,12,20,.8); }
+  #body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; }
+  /* The panel's content lives in two groups. In the default (wide / landscape) layout the groups
+     dissolve and their parts stack in one column, in this order: */
+  #colA, #colB { display: contents; }
+  #footA { order: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; }   /* Acid bassline | Clear */
+  #paneSound, #paneFluid { order: 1; }
+  #colB > * { order: 3; }
+  #bClear { grid-column: 2; padding: 7px 4px; border-color: rgba(255,95,95,.75); }
+  #bAcid2 { padding: 7px 4px; }
+  #body.fluid #bAcid2 { display: none; }
+  #body.fluid #colB { display: none; }      /* the Fluid tab shows only the styles */
+  #panel.closed #body { display: none; }
+  button { font: inherit; color: var(--text); background: rgba(255,255,255,.07); border: 1px solid var(--line);
+    border-radius: 5px; padding: 3px 8px; cursor: pointer; }
+  button:hover { background: rgba(255,255,255,.14); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { margin-top: 8px; }
+  .row label { display: flex; justify-content: space-between; }
+  .row output { color: var(--dim); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; margin: 3px 0 0; accent-color: var(--accent); }
+  .checks { display: flex; gap: 12px; margin-top: 10px; }
+  .checks label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .checks input { margin: 0; accent-color: var(--accent); }
+  /* The pill row: Drums, Bassline and Hi-hats are on/off pills (dim outline when off, tinted when on).
+     Break is a one-shot trigger in the same shape: brighter outline, solid and pulsing while a break runs. */
+  #pills { display: flex; gap: 3px; align-items: center; margin-top: 10px; }
+  #pills > button { flex: 1 1 auto; height: 24px; padding: 0 3px; font-size: 10.5px; border-radius: 999px; background: none; white-space: nowrap; touch-action: manipulation; }
+  .pill { border-color: rgba(255,110,200,.4); color: rgba(255,143,208,.55); }
+  #bBreak { border-color: rgba(255,110,200,.8); color: #ff8fd0; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+  #pills > #bBreak[aria-pressed=true] { background: #ff6ec8; border-color: #ff6ec8; color: #2a0619; font-weight: 600; animation: breakPulse .97s ease-in-out infinite; }
+  @keyframes breakPulse { 50% { opacity: .55; } }
+  #pills > .pill[aria-pressed=true] { background: rgba(255,110,200,.22); border-color: rgba(255,110,200,.9); color: #ffc2e6; }
+  select { width: 100%; margin-top: 3px; font: inherit; color: var(--text); background: #171a26; border: 1px solid var(--line); border-radius: 5px; padding: 3px 4px; }
+  .row label.inline { justify-content: flex-start; align-items: center; gap: 6px; cursor: pointer; }
+  .row label.inline input { margin: 0; accent-color: var(--accent); }
+  label.off { color: var(--dim); cursor: default; }
+  .tabs { display: flex; margin: 0 -10px; border-bottom: 1px solid var(--line); }
+  .tabs button { flex: 1; border: 0; border-radius: 0; background: none; padding: 7px 0; color: var(--dim); border-bottom: 2px solid transparent; }
+  .tabs button[aria-selected=true] { color: var(--text); border-bottom-color: var(--accent); }
+  .kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; }
+  .kinds button { padding: 7px 4px; }
+  /* element buttons are styled by what they are (data-kind), wherever they sit in the layout */
+  button[data-kind] { touch-action: manipulation; -webkit-touch-callout: none; }
+  button[data-kind].locked { box-shadow: inset 0 0 0 2px var(--accent); }
+  button[data-kind].locked::before { content: "↻ "; }
+  .kinds.three { grid-template-columns: 1fr 1fr 1fr; }
+  #styles button { font-size: 11px; padding: 6px 2px; }
+  .kinds button[aria-pressed=true], button[data-kind][aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #04121c; font-weight: 600; }
+  button[data-kind].now { border-color: var(--accent); color: var(--accent); }
+  /* on/off switches (Auto change, Loop all) are tinted violet so they read differently from the element buttons */
+  .kinds button.switch { background: rgba(180,140,255,.18); border-color: rgba(180,140,255,.5); }
+  .kinds button.switch[aria-pressed=true] { background: #b48cff; border-color: #b48cff; color: #120a24; font-weight: 600; }
+  #tabDrums, #drumsMin { display: none; }                          /* minimising the drums only exists in the upright-phone layout */
+  .actions { display: flex; gap: 6px; margin-top: 10px; }
+  .actions button { flex: 1; padding: 4px 0; }
+  .note { margin: 9px 0 0; color: var(--dim); font-size: 11px; }
+
+  /* ---- Phone held upright: the controls are one solid block along the bottom edge and the fluid
+          gets everything above it (the canvas ends where the block begins, see --dock below).
+          Both halves sit on the same row grid: a 26px header row, then seven 28px rows, 4px apart. ---- */
+  @media (orientation: portrait) and (max-width: 600px) {
+    canvas { width: 100%; height: calc(100% - var(--dock, 0px)); }               /* --dock = height of the block, set from script */
+    canvas.morph { transition: height .45s cubic-bezier(.4, 0, .2, 1); }   /* glide to a new height (see morphCanvas) */
+    #body::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 320px; background: #0a0c14; }   /* keeps the screen bottom covered while the block slides up */
+    #panel, #panel.closed { position: static; display: block; width: auto; padding: 0; background: none; border: 0; }
+    #toggle { height: 28px; padding: 0 10px; border-radius: 6px; background: rgba(10,12,20,.8); }
+    #body { position: fixed; z-index: 2; left: 0; right: 0; bottom: 0; overflow: visible;
+      padding: 0 6px calc(8px + env(safe-area-inset-bottom, 0px)); border: 0; border-top: 1px solid var(--line); background: #0a0c14;
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; align-items: start; }
+    #colA, #colB, #body.fluid #colB { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    #paneSound:not([hidden]), #paneFluid:not([hidden]) { display: flex; flex-direction: column; gap: 4px; }
+    #footA { order: 2; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; align-items: center; margin-top: 0; }
+    #body .row, #body .checks, #body .kinds, #body .actions, #bClear { margin-top: 0; }
+    /* header row: the tabs on the left, "Background drums" on the right */
+    .tabs { margin: 0; height: 26px; box-sizing: border-box; }
+    .tabs button { height: 100%; padding: 0; }
+    #colB > .row:first-child { height: 26px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line);
+      margin-left: -8px; padding-left: 8px; }                          /* reaches across the column gap, so the header line is unbroken */
+    /* 28px rows */
+    #body .kinds { gap: 4px; }
+    #body .kinds button, #bClear { height: 28px; padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #kinds button, #kits button { font-size: 11.5px; padding: 0 1px; }
+    #body #styles button { font-size: 10px; padding: 0; letter-spacing: -0.3px; }
+    #body .checks { height: 28px; align-items: center; }
+    /* the four pills share one row of the drums column, so they are set small there */
+    #pills { margin-top: 0; height: 28px; gap: 2px; }
+    #pills > button { height: 22px; padding: 0 2px; font-size: 10px; letter-spacing: -0.3px; }
+    #bAcid2 { height: 28px; margin-top: 0; padding: 0 1px; font-size: 11.5px; white-space: nowrap; }
+    #bClear { grid-column: 2; }
+    /* Drums minimised (the arrow in the drums header): the drums become a third tab, and the Sound
+       or Fluid buttons spread over the full width in more columns, so the block gets lower. */
+    /* The Drums header looks the same and sits in the same place whether the drums are shown (a row
+       above the drum controls) or minimised (the third tab): label on the left, boxed arrow on the right. */
+    #drumsMin, #tabDrums .chev { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 30px; height: 22px; padding: 0;
+      background: rgba(255,255,255,.07); border: 1px solid var(--line); border-radius: 5px; color: var(--text); }
+    #drumsHead { cursor: pointer; }
+    #body.nodrums .tabs { display: grid; grid-template-columns: calc((100% - 8px) / 4) calc((100% - 8px) / 4) minmax(0, 1fr); }   /* Sound and Fluid keep their width */
+    #body.nodrums { grid-template-columns: minmax(0, 1fr); }
+    #body.nodrums #colB, #body.nodrums.fluid #colB { display: none; }
+    #body.nodrums #tabDrums { display: flex; align-items: center; justify-content: space-between; padding: 0 0 0 8px; border-bottom: 0; color: var(--text); }
+    #body.nodrums #kinds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    /* bottom row: Acid bassline (one column wide), the pills, and a narrow Clear */
+    #body.nodrums #footA { display: flex; gap: 4px; align-items: center; }
+    #body.nodrums #bAcid2 { flex: none; width: calc((100% - 12px) / 4); }
+    #body.nodrums #pills { flex: 1; min-width: 0; height: auto; }
+    #body.nodrums #pills > button { height: 26px; padding: 0 4px; font-size: 10.5px; letter-spacing: -0.2px; }   /* more room down here */
+    #body.nodrums #bClear { flex: none; width: 50px; }
+    /* Fluid tab, drums minimised: no pills, and Clear shares the row of the "Drift between styles"
+       checkbox, so the block is exactly as high as on the Sound tab */
+    #body.nodrums.fluid #pills { display: none; }
+    #body.nodrums.fluid #footA { margin-top: -32px; justify-content: flex-end; pointer-events: none; }
+    #body.nodrums.fluid #bClear { pointer-events: auto; }
+    #body.nodrums #styles { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    #body.nodrums #styles button { font-size: 10.5px; letter-spacing: 0; }
+    /* the two sliders share the last three rows (3 x 28 + 2 x 4 = 92px) */
+    #soundSliders { display: flex; flex-direction: column; gap: 4px; }
+    #soundSliders .row { height: 44px; display: flex; flex-direction: column; justify-content: center; }
+    #body input[type=checkbox] { width: 16px; height: 16px; }
+    #body input[type=range] { height: 20px; margin: 0; }
+  }
+
+  @media (orientation: portrait) and (max-width: 380px) {            /* narrow phones: keep the four pills on one row */
+    #pills > button { padding: 0 1px; font-size: 9.5px; }
+    #body.nodrums #pills > button { padding: 0 2px; font-size: 10px; letter-spacing: -0.3px; }
+  }
+
+  #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+  #msg[hidden] { display: none; }
+  #msg div { max-width: 420px; font-size: 15px; line-height: 1.55; }
+  #msg h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+  #msg p { margin: 0; color: var(--dim); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="panel">
+  <div id="bar">
+    <button id="toggle" aria-expanded="true" aria-controls="body">Hide controls</button>
+  </div>
+  <div id="body">
+    <!-- Group A: tabs, what a touch adds (or the fluid styles), then Acid bassline and Clear -->
+    <div id="colA">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabSound" aria-controls="paneSound" aria-selected="true">Sound</button>
+        <button role="tab" id="tabFluid" aria-controls="paneFluid" aria-selected="false">Fluid</button>
+        <button id="tabDrums" aria-controls="colB" aria-expanded="false"><span>Drums</span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></span></button>
+      </div>
+      <div id="paneSound" role="tabpanel" aria-labelledby="tabSound">
+        <div class="kinds" id="kinds">
+          <button data-kind="auto" class="switch" aria-pressed="true">Auto change</button>
+          <button id="keep" class="switch" aria-pressed="false">Loop all</button>
+          <button data-kind="pluck" aria-pressed="false">Plucked string</button>
+          <button data-kind="hat" aria-pressed="false">Hi-hats</button>
+          <button data-kind="vox" aria-pressed="false">Vocal chops</button>
+          <button data-kind="choir" aria-pressed="false">Choir</button>
+          <button data-kind="note" aria-pressed="false">Pluck notes</button>
+          <button data-kind="bell" aria-pressed="false">Bell notes</button>
+          <button data-kind="arp" aria-pressed="false">Melody</button>
+          <button data-kind="stab" aria-pressed="false">Chord stabs</button>
+          <button data-kind="acid" aria-pressed="false">Acid</button>
+          <button data-kind="trance" aria-pressed="false">Trance synth</button>
+        </div>
+      </div>
+      <div id="paneFluid" role="tabpanel" aria-labelledby="tabFluid" hidden>
+        <div class="kinds three" id="styles"></div>
+        <div class="checks">
+          <label><input type="checkbox" id="drift" checked> Drift between styles</label>
+        </div>
+        <!-- Per-style fine-tuning (sliders, Bloom, Shading). Hidden for now: remove the "hidden"
+             attribute to bring it back. The controls still exist and each style still sets them. -->
+        <div id="weaveValues" hidden>
+          <div id="weaveSliders"></div>
+          <div class="actions"><button id="bWeaveReset">Reset Weave settings</button></div>
+        </div>
+        <div id="threadsValues" hidden>
+          <div id="threadsSliders"></div>
+          <div class="actions"><button id="bThreadsReset">Reset Threads settings</button></div>
+        </div>
+        <div id="styleValues" hidden>
+        <div id="sliders"></div>
+        <div class="checks">
+          <label><input type="checkbox" id="bloom" checked> Bloom</label>
+          <label><input type="checkbox" id="shading" checked> Shading</label>
+        </div>
+        </div>
+      </div>
+      <div id="footA">
+        <button id="bAcid2" data-kind="acid2" aria-pressed="false">Acid bassline</button>
+        <button id="bClear">Clear</button>
+      </div>
+    </div>
+    <!-- Group B: the backing track -->
+    <div id="colB">
+      <div class="row" id="drumsHead"><span>Drums</span><button id="drumsMin" aria-label="Minimise drums" aria-controls="colB" aria-expanded="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button></div>
+      <div class="kinds three" id="kits">
+        <button data-kit="6" aria-pressed="false">Velvet</button>
+        <button data-kit="0" aria-pressed="false">Soft</button>
+        <button data-kit="1" aria-pressed="true">Classic</button>
+        <button data-kit="2" aria-pressed="false">Punchy</button>
+        <button data-kit="3" aria-pressed="false">Deep</button>
+        <button data-kit="4" aria-pressed="false">Hard</button>
+        <button data-kit="5" aria-pressed="false">Dirty</button>
+        <button data-kit="7" aria-pressed="false">Nasty</button>
+        <button data-kit="8" aria-pressed="false">Hardcore</button>
+      </div>
+      <!-- On/off pills for the backing track, plus Break. On an upright phone with the drums minimised,
+           the whole #pills row moves into #footA, between Acid bassline and Clear (see placePills). -->
+      <div id="pillSlot">
+        <div id="pills">
+          <button class="pill" id="pDrums" aria-pressed="true">Drums</button>
+          <button class="pill" id="pBass" aria-pressed="true">Bassline</button>
+          <button class="pill" id="pHats" aria-pressed="true">Hi-hats</button>
+          <button id="bBreak" aria-pressed="false" title="Tap: break now. Automatic breaks are on (hold to switch off)">Auto-Break</button>
+        </div>
+      </div>
+      <div id="soundSliders"></div>
+    </div>
+    <p class="note" id="res" hidden></p>
+  </div>
+</div>
+
+<div id="msg" hidden><div>
+  <h1>This needs WebGL</h1>
+  <p id="msgText">The fluid runs on your graphics card, and this browser or device can’t render to floating-point textures. Try a current version of Chrome, Firefox or Safari, and check that hardware acceleration is switched on.</p>
+</div></div>
+
+<script>
+(function () {
+'use strict';
+
+/* ------------------------------------------------------------------ *
+ *  Settings (live-editable from the panel)
+ * ------------------------------------------------------------------ */
+const config = {
+  dyeDissipation: 0.6,   // how fast dye fades (1/s)
+  velDissipation: 0.15,  // how fast motion dies down (1/s)
+  curl: 22,              // vorticity confinement strength
+  iterations: 24,        // Jacobi pressure iterations
+  radius: 0.10,          // splat radius
+  style: 0,              // index into STYLES
+  threads: { count: 400, share: 0.45, trail: 1, linger: 1, drift: 1, spread: 1, width: 0.3, bright: 0.28 },   // Threads style tuning
+  weave: { count: 75, tension: 8000, home: 35, reach: 0.65, cross: 1.2, sway: 1.2, damping: 5.3, width: 0.4, bright: 0.92 },   // Weave style tuning
+  drift: true,           // wander to a random other style every so often (on by default)
+  bloom: true,
+  shading: true,
+  sound: true,
+  bass: 1,               // low end of the backing track: 0 = cut 12 dB, 1 = neutral, 2 = boost 12 dB
+  bassline: true,        // backing bassline on/off
+  hats: true,            // backing hi-hats on/off
+  bpm: 124,              // tempo of the backing track
+  backing: true,         // the whole backing track; always on now (its parts have their own pills)
+  kit: 1,                // backing drum kit, 0 (soft) .. 5 (dirty); -1 = drums off
+  touchMode: 'auto',     // 'auto' rotates the touch element; otherwise one of the KINDS keys
+  locks: {},             // per element: true = everything added with it keeps looping
+  keep: false,           // "Loop all": added sounds loop until cleared instead of fading
+  autoBreak: true        // the track breaks down by itself every couple of minutes (press and hold Break to switch)
+};
+const PRESSURE_KEEP = 0.8;      // warm-start factor for the pressure solve
+const FORCE_GAIN = 0.35;        // pointer speed -> fluid speed
+const BLOOM_RES = 256, BLOOM_PASSES = 7, BLOOM_THRESHOLD = 0.5, BLOOM_KNEE = 0.7, BLOOM_INTENSITY = 0.4;
+
+// Quality ladder: [velocity/pressure grid, dye texture] along the short screen edge.
+const LADDER = [[256, 1024], [192, 1024], [128, 768], [128, 512], [96, 512], [64, 384]];
+const coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+let quality = coarse ? 2 : 0;
+
+const canvas = document.getElementById('c');
+const $ = id => document.getElementById(id);
+
+/* ------------------------------------------------------------------ *
+ *  WebGL context + a renderable float texture format
+ * ------------------------------------------------------------------ */
+let gl, fmt; // fmt = { internal, type, linear }
+
+function initGL() {
+  const opts = { alpha: false, depth: false, stencil: false, antialias: false, powerPreference: 'high-performance' };
+  gl = canvas.getContext('webgl2', opts);
+  const gl2 = !!gl;
+  if (!gl) gl = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
+  if (!gl) return false;
+
+  const candidates = [];
+  if (gl2) {
+    gl.getExtension('EXT_color_buffer_float');
+    gl.getExtension('EXT_color_buffer_half_float');
+    candidates.push({ internal: gl.RGBA16F, type: gl.HALF_FLOAT, linear: true });
+    candidates.push({ internal: gl.RGBA32F, type: gl.FLOAT, linear: !!gl.getExtension('OES_texture_float_linear') });
+  } else {
+    const hf = gl.getExtension('OES_texture_half_float');
+    gl.getExtension('EXT_color_buffer_half_float');
+    gl.getExtension('WEBGL_color_buffer_float');
+    if (hf) candidates.push({ internal: gl.RGBA, type: hf.HALF_FLOAT_OES, linear: !!gl.getExtension('OES_texture_half_float_linear') });
+    if (gl.getExtension('OES_texture_float'))
+      candidates.push({ internal: gl.RGBA, type: gl.FLOAT, linear: !!gl.getExtension('OES_texture_float_linear') });
+  }
+  // Pick the first format we can actually render into.
+  fmt = null;
+  for (const c of candidates) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, c.internal, 4, 4, 0, gl.RGBA, c.type, null);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fbo); gl.deleteTexture(tex);
+    if (ok) { fmt = c; break; }
+  }
+  return !!fmt;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Shaders (GLSL ES 1.00 so the same source runs on WebGL1 and WebGL2)
+ * ------------------------------------------------------------------ */
+const VERT = `
+attribute vec2 aPos;
+uniform vec2 texel;                 // size of one texel of the texture being sampled
+varying vec2 vUv, vL, vR, vT, vB;   // centre + 4 neighbours
+void main () {
+  vUv = aPos * 0.5 + 0.5;
+  vL = vUv - vec2(texel.x, 0.0);
+  vR = vUv + vec2(texel.x, 0.0);
+  vT = vUv + vec2(0.0, texel.y);
+  vB = vUv - vec2(0.0, texel.y);
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+const HEAD = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float; precision highp sampler2D;
+#else
+precision mediump float; precision mediump sampler2D;
+#endif
+varying vec2 vUv, vL, vR, vT, vB;
+`;
+
+const FRAG = {
+  // Multiply a texture by a constant (also used to copy/rescale and to damp pressure).
+  scale: `
+uniform sampler2D uTex; uniform float uValue;
+void main () { gl_FragColor = uValue * texture2D(uTex, vUv); }`,
+
+  // Add a Gaussian blob of "color" (dye RGB, or a velocity in xy) at "point".
+  splat: `
+uniform sampler2D uTarget; uniform vec2 point, scale; uniform vec3 color; uniform float radius;
+void main () {
+  vec2 p = (vUv - point) * scale;               // distance in short-edge units
+  vec3 s = exp(-dot(p, p) / radius) * color;
+  gl_FragColor = vec4(texture2D(uTarget, vUv).xyz + s, 1.0);
+}`,
+
+  // Semi-Lagrangian advection: trace each cell backwards along the velocity field
+  // and fetch what was there. Unconditionally stable for any time step.
+  advect: `
+uniform sampler2D uVelocity, uSource; uniform vec2 velTexel, srcTexel, wind; uniform float dt, dissipation;
+vec4 bilerp (sampler2D s, vec2 uv, vec2 ts) {   // manual filtering for GPUs without float-linear
+  vec2 st = uv / ts - 0.5; vec2 i = floor(st), f = fract(st);
+  vec4 a = texture2D(s, (i + vec2(0.5, 0.5)) * ts), b = texture2D(s, (i + vec2(1.5, 0.5)) * ts);
+  vec4 c = texture2D(s, (i + vec2(0.5, 1.5)) * ts), d = texture2D(s, (i + vec2(1.5, 1.5)) * ts);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+void main () {
+#ifdef MANUAL_FILTER
+  vec2 coord = vUv - dt * (bilerp(uVelocity, vUv, velTexel).xy * velTexel + wind);
+  vec4 result = bilerp(uSource, coord, srcTexel);
+#else
+  vec2 coord = vUv - dt * (texture2D(uVelocity, vUv).xy * velTexel + wind);   // velocity is in grid cells / second; wind is a steady drift in screen widths / second
+  vec4 result = texture2D(uSource, coord);
+#endif
+  gl_FragColor = result / (1.0 + dissipation * dt);
+}`,
+
+  // Curl (scalar vorticity) of the velocity field.
+  curl: `
+uniform sampler2D uVelocity;
+void main () {
+  float L = texture2D(uVelocity, vL).y, R = texture2D(uVelocity, vR).y;
+  float T = texture2D(uVelocity, vT).x, B = texture2D(uVelocity, vB).x;
+  gl_FragColor = vec4(0.5 * (R - L - T + B), 0.0, 0.0, 1.0);
+}`,
+
+  // Vorticity confinement: push fluid around existing vortices to restore the
+  // small swirls that numerical diffusion smears away.
+  vorticity: `
+uniform sampler2D uVelocity, uCurl, uDye; uniform float curl, dt, buoy;
+void main () {
+  float L = texture2D(uCurl, vL).x, R = texture2D(uCurl, vR).x;
+  float T = texture2D(uCurl, vT).x, B = texture2D(uCurl, vB).x, C = texture2D(uCurl, vUv).x;
+  vec2 force = 0.5 * vec2(abs(T) - abs(B), abs(R) - abs(L));
+  force /= length(force) + 0.0001;
+  force *= curl * C; force.y *= -1.0;
+  vec2 vel = texture2D(uVelocity, vUv).xy + force * dt;
+  vel.y += buoy * min(length(texture2D(uDye, vUv).rgb), 2.0) * dt;   // hot/light dye rises (smoke, fire)
+  gl_FragColor = vec4(clamp(vel, -1000.0, 1000.0), 0.0, 1.0);
+}`,
+
+  // Divergence of velocity. At the walls the neighbour is treated as a mirrored
+  // (negated) velocity so nothing flows through the canvas edge.
+  divergence: `
+uniform sampler2D uVelocity;
+void main () {
+  float L = texture2D(uVelocity, vL).x, R = texture2D(uVelocity, vR).x;
+  float T = texture2D(uVelocity, vT).y, B = texture2D(uVelocity, vB).y;
+  vec2 C = texture2D(uVelocity, vUv).xy;
+  if (vL.x < 0.0) L = -C.x;
+  if (vR.x > 1.0) R = -C.x;
+  if (vT.y > 1.0) T = -C.y;
+  if (vB.y < 0.0) B = -C.y;
+  gl_FragColor = vec4(0.5 * (R - L + T - B), 0.0, 0.0, 1.0);
+}`,
+
+  // One Jacobi iteration of the pressure Poisson equation (laplacian p = divergence).
+  // Clamp-to-edge sampling gives the zero-gradient (Neumann) wall condition.
+  pressure: `
+uniform sampler2D uPressure, uDivergence;
+void main () {
+  float L = texture2D(uPressure, vL).x, R = texture2D(uPressure, vR).x;
+  float T = texture2D(uPressure, vT).x, B = texture2D(uPressure, vB).x;
+  float div = texture2D(uDivergence, vUv).x;
+  gl_FragColor = vec4((L + R + B + T - div) * 0.25, 0.0, 0.0, 1.0);
+}`,
+
+  // Subtract the pressure gradient, leaving a divergence-free velocity field.
+  // The wall-normal component is zeroed on the outermost cells.
+  gradient: `
+uniform sampler2D uPressure, uVelocity;
+void main () {
+  float L = texture2D(uPressure, vL).x, R = texture2D(uPressure, vR).x;
+  float T = texture2D(uPressure, vT).x, B = texture2D(uPressure, vB).x;
+  vec2 vel = texture2D(uVelocity, vUv).xy - 0.5 * vec2(R - L, T - B);
+  if (vL.x < 0.0 || vR.x > 1.0) vel.x = 0.0;
+  if (vB.y < 0.0 || vT.y > 1.0) vel.y = 0.0;
+  gl_FragColor = vec4(vel, 0.0, 1.0);
+}`,
+
+  // Bloom: keep only the bright parts (soft-knee threshold).
+  prefilter: `
+uniform sampler2D uTex; uniform vec3 curve; uniform float threshold;
+void main () {
+  vec3 c = texture2D(uTex, vUv).rgb;
+  float br = max(c.r, max(c.g, c.b));
+  float rq = clamp(br - curve.x, 0.0, curve.y); rq = curve.z * rq * rq;
+  gl_FragColor = vec4(c * max(rq, br - threshold) / max(br, 0.0001), 1.0);
+}`,
+
+  // Bloom: 4-tap box blur used for both down- and up-sampling.
+  blur: `
+uniform sampler2D uTex; uniform float uValue;
+void main () {
+  vec4 s = texture2D(uTex, vL) + texture2D(uTex, vR) + texture2D(uTex, vT) + texture2D(uTex, vB);
+  gl_FragColor = s * 0.25 * uValue;
+}`
+};
+
+// Final image. One shader source, compiled once per visual style (#define STYLE n).
+// Every style reads the same dye texture; they differ in how density and colour are drawn.
+const DISPLAY = `
+uniform sampler2D uDye, uBloom, uVel;
+uniform float uShading, uBloomOn, uTime, uVelScale;
+uniform vec2 uRes;
+float hash (vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise (vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm (vec2 p) { return 0.5 * vnoise(p) + 0.25 * vnoise(p * 2.03) + 0.125 * vnoise(p * 4.01) + 0.125 * vnoise(p * 8.1); }
+float hgt (float x) { return 1.0 - exp(-x); }
+vec3 tint (vec3 c) { return c / max(max(c.r, max(c.g, c.b)), 0.0001); }       // hue of the dye, full brightness
+float stars (vec2 p, float rarity) {                                           // one twinkling star per grid cell, at most
+  vec2 g = floor(p), f = fract(p);
+  float h = hash(g);
+  vec2 o = vec2(hash(g + 1.3), hash(g + 2.7)) * 0.6 + 0.2;
+  return step(rarity, h) * smoothstep(0.22, 0.0, length(f - o)) * (0.6 + 0.4 * sin(uTime * 2.0 + h * 40.0));
+}
+void main () {
+  vec2 asp = vec2(uRes.x / uRes.y, 1.0);
+  vec2 grid = vec2(90.0 * asp.x, 90.0);
+  vec2 uv = vUv;
+#if STYLE == 13
+  uv = (floor(vUv * grid) + 0.5) / grid;                                       // snap to chunky blocks
+#endif
+  vec3 c = texture2D(uDye, uv).rgb;
+  float d = length(c);
+  // Dye density as a height field -> gradient, normal and simple lighting shared by most styles.
+  float lL = length(texture2D(uDye, vL).rgb), lR = length(texture2D(uDye, vR).rgb);
+  float lT = length(texture2D(uDye, vT).rgb), lB = length(texture2D(uDye, vB).rgb);
+  float dx = hgt(lR) - hgt(lL), dy = hgt(lT) - hgt(lB);
+  vec3 n = normalize(vec3(-dx * 14.0, -dy * 14.0, 1.0));
+  vec3 l = normalize(vec3(-0.45, 0.55, 0.8));                                  // light from the upper left
+  vec3 hv = normalize(l + vec3(0.0, 0.0, 1.0));
+  float shade = step(0.5, uShading);
+  float lit = mix(1.0, clamp(0.45 + 0.7 * dot(n, l), 0.35, 1.5), shade);
+  float spec = shade * pow(max(dot(n, hv), 0.0), 48.0);
+  vec3 bloom = uBloomOn > 0.5 ? texture2D(uBloom, vUv).rgb : vec3(0.0);
+  vec2 q = vUv - 0.5;
+  vec3 col;
+
+#if STYLE == 0          // Ink: lit, glowing dye on black
+  col = c * lit + spec * 0.35 * min(d, 1.0) + bloom;
+  col = 1.0 - exp(-col * 1.4);
+  col += vec3(0.020, 0.022, 0.040) * (1.0 - dot(q, q) * 1.2);
+
+#elif STYLE == 1        // Galaxy: cloudy nebula over a twinkling starfield
+  float cloud = 0.55 + 0.9 * fbm(uv * asp * 5.0 + c.rg * 0.3);
+  col = c * cloud * lit + bloom * 0.7;
+  col = 1.0 - exp(-col * 1.3);
+  float st = stars(uv * asp * 60.0, 0.90) + 0.6 * stars(uv * asp * 150.0, 0.93);
+  col += st * vec3(0.9, 0.95, 1.0) * (1.0 - 0.6 * min(d, 1.0));
+  col += vec3(0.010, 0.008, 0.030) + 0.03 * vec3(0.3, 0.1, 0.5) * fbm(uv * asp * 2.0);
+
+#elif STYLE == 3        // Smoke: soft grey wisps
+  col = vec3(0.78, 0.80, 0.84) * hgt(d * 0.9) * (0.75 + 0.25 * lit) + bloom * 0.3;
+  col += vec3(0.015, 0.017, 0.022);
+
+#elif STYLE == 4        // Fire: colour by heat, dark red -> orange -> yellow -> white
+  float heat = hgt(d * 1.1);
+  col = vec3(smoothstep(0.0, 0.45, heat), smoothstep(0.25, 0.8, heat) * 0.85, smoothstep(0.65, 1.0, heat) * 0.7);
+  col += bloom * vec3(0.5, 0.25, 0.1);
+  col += vec3(0.020, 0.010, 0.008);
+
+#elif STYLE == 5        // Lava lamp: hard-edged blobs in saturated colour
+  float blob = smoothstep(0.32, 0.42, d);
+  vec3 wax = tint(c) * (0.75 + 0.25 * smoothstep(0.4, 1.2, d)) * lit + spec * 0.4;
+  col = mix(vec3(0.060, 0.015, 0.070) * (0.6 + 0.8 * vUv.y), wax, blob) + bloom * 0.2;
+
+#elif STYLE == 6        // Watercolour: pigment soaking into paper, darker where it pools at the edges
+  float pn = fbm(vUv * uRes / 90.0);
+  vec3 paper = vec3(0.96, 0.94, 0.89) * (0.94 + 0.08 * pn);
+  vec3 pig = mix(tint(c), vec3(0.5), 0.2);
+  float wet = clamp(hgt(d * 1.3) * (0.8 + 0.25 * pn), 0.0, 1.0);
+  col = paper * mix(vec3(1.0), pig, wet);
+  col *= 1.0 - 0.3 * shade * clamp(length(vec2(dx, dy)) * 18.0, 0.0, 1.0);
+
+#elif STYLE == 9        // Neon: thin contour lines of the dye density instead of filled clouds
+  float gd = length(vec2(lR - lL, lT - lB)) * 0.5;
+  float line = smoothstep(1.5, 0.0, abs(fract(d * 3.0) - 0.5) / (3.0 * gd + 0.0001));
+  col = tint(c) * line * smoothstep(0.04, 0.15, d) * 1.6 + bloom * 1.5;
+  col = 1.0 - exp(-col * 1.5);
+  col += vec3(0.008, 0.008, 0.015);
+
+#elif STYLE == 10       // Aurora: dye smeared upward into rippling curtains under a night sky
+  vec3 acc = vec3(0.0);
+  for (int k = 0; k < 8; k++) {
+    float fk = float(k);
+    vec2 o = vec2(sin(uv.y * 18.0 + uTime * 0.8 + fk) * 0.002, -fk * 0.022);
+    acc += texture2D(uDye, uv + o).rgb * (1.0 - fk / 8.0);
+  }
+  acc *= 0.3 * (0.7 + 0.5 * vnoise(vec2(uv.x * asp.x * 60.0, uTime * 0.3)));
+  col = 1.0 - exp(-(acc + bloom * 0.6) * 1.3);
+  col += mix(vec3(0.004, 0.012, 0.030), vec3(0.0, 0.004, 0.012), vUv.y);
+  col += 0.5 * stars(uv * asp * 90.0, 0.92) * (1.0 - min(d, 1.0));
+
+#elif STYLE == 11       // Deep sea: bioluminescence, only lit where the water is moving
+  float speed = length(texture2D(uVel, vUv).xy) * uVelScale;
+  float glow = smoothstep(0.02, 0.5, speed);
+  col = c * (0.04 + 1.6 * glow) * lit + bloom * glow;
+  col = 1.0 - exp(-col * 1.4);
+  col += vec3(0.0, 0.012, 0.025) * (0.5 + vUv.y);
+
+#elif STYLE == 12       // Marble: veins of pigment folded into polished stone
+  vec3 stone = vec3(0.93, 0.91, 0.87) * (0.96 + 0.06 * fbm(vUv * asp * 3.0));
+  col = mix(stone, tint(c) * 0.55 * (0.75 + 0.25 * sin(d * 14.0)), clamp(hgt(d * 0.8), 0.0, 1.0));
+  col = col * (0.9 + 0.1 * lit) + spec * 0.25;
+
+#elif STYLE == 13       // Pixel: chunky blocks, few colour levels
+  col = floor((1.0 - exp(-c * 1.4)) * 4.0 + 0.5) / 4.0 + vec3(0.03, 0.03, 0.05);
+  vec2 cell = fract(vUv * grid);
+  if (cell.x < 0.08 || cell.y < 0.08) col *= 0.82;
+
+#elif STYLE == 15       // Strings: thin white parallel lines that the dye pulls into tangles
+  // Lines are the contours of (height on screen + a push from the dye). Warm colours push one way,
+  // cool colours the other, so strokes drag the lines apart, bunch them and cross them over.
+  vec3 pull = vec3(1.0, -0.4, -0.9) * 5.0;
+  float rows = 64.0;
+  float phi = uv.y * rows + dot(c, pull);
+  float pL = vL.y * rows + dot(texture2D(uDye, vL).rgb, pull), pR = vR.y * rows + dot(texture2D(uDye, vR).rgb, pull);
+  float pT = vT.y * rows + dot(texture2D(uDye, vT).rgb, pull), pB = vB.y * rows + dot(texture2D(uDye, vB).rgb, pull);
+  float slope = length(vec2(pR - pL, pT - pB)) * 0.5 + 0.0001;          // keeps every line about the same width
+  // Every line carries a jagged pattern of straight segments and sharp corners, plus bright/dim
+  // stretches, all scrolling right to left at one shared speed like scenery in a side-scroller.
+  // The 0.25 here must match the Strings style's "scroll" value so the dye drifts along with it.
+  float row = floor(phi);
+  float along = uv.x * asp.x + uTime * 0.25;
+  float seg = along * (7.0 + 6.0 * hash(vec2(row, 3.0)));               // each line has its own kink spacing
+  float ripple = 0.30 * (mix(hash(vec2(floor(seg), row)), hash(vec2(floor(seg) + 1.0, row)), fract(seg)) - 0.5);
+  float thread = 1.0 - smoothstep(0.35, 1.1, abs(fract(phi + ripple) - 0.5) / slope);
+  float passing = 0.45 + 0.55 * smoothstep(0.25, 0.6, vnoise(vec2(along * 6.0, row * 1.7)));
+  col = vec3(thread) * passing * (0.8 + 0.4 * min(d, 1.0));
+
+#elif STYLE == 16       // Weave: near-black, with only a faint glow of ink behind the strings
+  col = (1.0 - exp(-c * 1.4)) * 0.22 + vec3(0.004, 0.004, 0.008);
+
+#else                   // Ink in milk: dark ink on a light surface
+  vec3 milk = vec3(0.96, 0.95, 0.92) * (1.0 - 0.15 * dot(q, q));
+  col = milk * exp(-d * 1.8 * (1.0 - 0.3 * tint(c)));
+  col = col * mix(1.0, 0.85 + 0.2 * lit, min(d, 1.0)) + spec * 0.15 * min(d, 1.0);
+#endif
+
+  float noise = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  gl_FragColor = vec4(col + (noise - 0.5) / 255.0, 1.0);                       // dither against banding
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function makeProgram(frag, defines) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, (defines || '') + HEAD + frag));
+  gl.bindAttribLocation(p, 0, 'aPos');
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name; u[name] = gl.getUniformLocation(p, name); }
+  return { u, use() { gl.useProgram(p); return u; } };
+}
+
+/* ------------------------------------------------------------------ *
+ *  Render targets
+ * ------------------------------------------------------------------ */
+function createFBO(w, h, filter) {
+  const tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, fmt.internal, w, h, 0, gl.RGBA, fmt.type, null);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  return {
+    fbo, w, h, tx: 1 / w, ty: 1 / h,
+    attach(unit) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); return unit; },
+    dispose() { gl.deleteFramebuffer(fbo); gl.deleteTexture(tex); }
+  };
+}
+// Ping-pong pair: read from one, write to the other, swap.
+function createDouble(w, h, filter) {
+  let a = createFBO(w, h, filter), b = createFBO(w, h, filter);
+  return {
+    w, h, tx: 1 / w, ty: 1 / h,
+    get read() { return a; }, get write() { return b; },
+    swap() { const t = a; a = b; b = t; },
+    dispose() { a.dispose(); b.dispose(); }
+  };
+}
+// Draw a full-screen quad into a target (null = the canvas).
+function blit(target) {
+  if (target) { gl.viewport(0, 0, target.w, target.h); gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo); }
+  else { gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight); gl.bindFramebuffer(gl.FRAMEBUFFER, null); }
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function clearTarget(t) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo); gl.viewport(0, 0, t.w, t.h);
+  gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+}
+
+let P = {};                                   // shader programs
+let velocity, dye, pressure, divergence, curl, bloom, bloomChain = [];
+let simScaleRef = 0;                          // sim resolution the velocity values are expressed in
+
+// Grid size for a given short-edge resolution, keeping cells square.
+function gridSize(res) {
+  const w = canvas.width, h = canvas.height;
+  const aspect = Math.max(w, h) / Math.max(1, Math.min(w, h));
+  const max = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+  const long = Math.min(max, Math.round(res * aspect)), short = Math.min(max, res);
+  return w >= h ? { w: long, h: short } : { w: short, h: long };
+}
+// Reallocate a ping-pong pair at a new size, carrying its contents over.
+function resizeDouble(old, w, h, filter, scale) {
+  if (!old) return createDouble(w, h, filter);
+  if (old.w === w && old.h === h && scale === 1) return old;
+  const fresh = createDouble(w, h, filter);
+  const u = P.scale.use();
+  gl.uniform1i(u.uTex, old.read.attach(0));
+  gl.uniform1f(u.uValue, scale);
+  blit(fresh.write); fresh.swap();
+  old.dispose();
+  return fresh;
+}
+function initFramebuffers() {
+  const [simRes, dyeRes] = LADDER[quality];
+  const s = gridSize(simRes), d = gridSize(dyeRes);
+  const filter = fmt.linear ? gl.LINEAR : gl.NEAREST;
+  gl.disable(gl.BLEND);
+
+  // Velocity is stored in cells/second, so rescale it when the grid changes.
+  const vScale = simScaleRef ? simRes / simScaleRef : 1;
+  simScaleRef = simRes;
+  velocity = resizeDouble(velocity, s.w, s.h, filter, vScale);
+  dye = resizeDouble(dye, d.w, d.h, filter, 1);
+
+  if (pressure) pressure.dispose();
+  if (divergence) divergence.dispose();
+  if (curl) curl.dispose();
+  pressure = createDouble(s.w, s.h, gl.NEAREST);
+  divergence = createFBO(s.w, s.h, gl.NEAREST);
+  curl = createFBO(s.w, s.h, gl.NEAREST);
+
+  // Bloom mip chain
+  if (bloom) bloom.dispose();
+  bloomChain.forEach(b => b.dispose());
+  bloomChain = [];
+  const b = gridSize(BLOOM_RES);
+  bloom = createFBO(b.w, b.h, filter);
+  for (let i = 0; i < BLOOM_PASSES; i++) {
+    const w = b.w >> (i + 1), h = b.h >> (i + 1);
+    if (w < 2 || h < 2) break;
+    bloomChain.push(createFBO(w, h, filter));
+  }
+  $('res').textContent = 'Grid ' + s.w + '×' + s.h + ', dye ' + d.w + '×' + d.h;
+}
+
+// While the control block changes height, the canvas glides to its new size (a CSS transition that
+// stretches the current picture) instead of jumping. The drawing buffer is only resized when it has
+// arrived; that resize stretches the fluid the same way, so there is no jump at the end either.
+let morphing = false, morphTimer = 0;
+function morphCanvas() {
+  morphing = true; canvas.classList.add('morph');
+  clearTimeout(morphTimer);
+  morphTimer = setTimeout(() => { morphing = false; canvas.classList.remove('morph'); }, 500);
+}
+function resizeCanvas() {
+  if (morphing) return false;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(canvas.clientWidth * dpr)), h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+  if (canvas.width === w && canvas.height === h) return false;
+  canvas.width = w; canvas.height = h;
+  return true;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Simulation step
+ * ------------------------------------------------------------------ */
+function step(dt) {
+  gl.disable(gl.BLEND);
+  let u;
+
+  // 1. Advect velocity through itself (semi-Lagrangian).
+  u = P.advect.use();
+  gl.uniform2f(u.texel, velocity.tx, velocity.ty);
+  gl.uniform2f(u.velTexel, velocity.tx, velocity.ty);
+  gl.uniform2f(u.srcTexel, velocity.tx, velocity.ty);
+  gl.uniform1i(u.uVelocity, velocity.read.attach(0));
+  gl.uniform1i(u.uSource, 0);
+  gl.uniform1f(u.dt, dt);
+  gl.uniform1f(u.dissipation, config.velDissipation);
+  gl.uniform2f(u.wind, -(STYLES[config.style].scroll || 0) * canvas.height / canvas.width, 0);   // some styles drift everything left
+  blit(velocity.write); velocity.swap();
+
+  // 2. Vorticity confinement: measure curl, then add a force that re-energises swirls.
+  u = P.curl.use();
+  gl.uniform2f(u.texel, velocity.tx, velocity.ty);
+  gl.uniform1i(u.uVelocity, velocity.read.attach(0));
+  blit(curl);
+
+  u = P.vorticity.use();
+  gl.uniform2f(u.texel, velocity.tx, velocity.ty);
+  gl.uniform1i(u.uVelocity, velocity.read.attach(0));
+  gl.uniform1i(u.uCurl, curl.attach(1));
+  gl.uniform1f(u.curl, config.curl);
+  gl.uniform1i(u.uDye, dye.read.attach(2));
+  gl.uniform1f(u.buoy, STYLES[config.style].buoy * Math.min(velocity.w, velocity.h));
+  gl.uniform1f(u.dt, dt);
+  blit(velocity.write); velocity.swap();
+
+  // 3. Divergence of the (now non-solenoidal) velocity.
+  u = P.divergence.use();
+  gl.uniform2f(u.texel, velocity.tx, velocity.ty);
+  gl.uniform1i(u.uVelocity, velocity.read.attach(0));
+  blit(divergence);
+
+  // 4. Pressure solve. Start from a damped copy of last frame's pressure, then Jacobi-iterate.
+  u = P.scale.use();
+  gl.uniform1i(u.uTex, pressure.read.attach(0));
+  gl.uniform1f(u.uValue, PRESSURE_KEEP);
+  blit(pressure.write); pressure.swap();
+
+  u = P.pressure.use();
+  gl.uniform2f(u.texel, velocity.tx, velocity.ty);
+  gl.uniform1i(u.uDivergence, divergence.attach(0));
+  for (let i = 0; i < config.iterations; i++) {
+    gl.uniform1i(u.uPressure, pressure.read.attach(1));
+    blit(pressure.write); pressure.swap();
+  }
+
+  // 5. Projection: subtract the pressure gradient to make the flow incompressible.
+  u = P.gradient.use();
+  gl.uniform2f(u.texel, velocity.tx, velocity.ty);
+  gl.uniform1i(u.uPressure, pressure.read.attach(0));
+  gl.uniform1i(u.uVelocity, velocity.read.attach(1));
+  blit(velocity.write); velocity.swap();
+
+  // 6. Advect the high-resolution dye through the divergence-free velocity.
+  u = P.advect.use();
+  gl.uniform2f(u.texel, velocity.tx, velocity.ty);
+  gl.uniform2f(u.velTexel, velocity.tx, velocity.ty);
+  gl.uniform2f(u.srcTexel, dye.tx, dye.ty);
+  gl.uniform1i(u.uVelocity, velocity.read.attach(0));
+  gl.uniform1i(u.uSource, dye.read.attach(1));
+  gl.uniform1f(u.dt, dt);
+  gl.uniform1f(u.dissipation, config.dyeDissipation);
+  gl.uniform2f(u.wind, -(STYLES[config.style].scroll || 0) * canvas.height / canvas.width, 0);
+  blit(dye.write); dye.swap();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Rendering: bloom + lit composite
+ * ------------------------------------------------------------------ */
+function renderBloom() {
+  if (bloomChain.length < 2) return;
+  gl.disable(gl.BLEND);
+  let last = bloom, u;
+
+  // Bright-pass
+  u = P.prefilter.use();
+  const knee = BLOOM_THRESHOLD * BLOOM_KNEE + 0.0001;
+  gl.uniform3f(u.curve, BLOOM_THRESHOLD - knee, knee * 2, 0.25 / knee);
+  gl.uniform1f(u.threshold, BLOOM_THRESHOLD);
+  gl.uniform1i(u.uTex, dye.read.attach(0));
+  blit(last);
+
+  // Downsample chain
+  u = P.blur.use();
+  gl.uniform1f(u.uValue, 1);
+  for (const dest of bloomChain) {
+    gl.uniform2f(u.texel, last.tx, last.ty);
+    gl.uniform1i(u.uTex, last.attach(0));
+    blit(dest); last = dest;
+  }
+  // Upsample, adding each level back in
+  gl.blendFunc(gl.ONE, gl.ONE); gl.enable(gl.BLEND);
+  for (let i = bloomChain.length - 2; i >= 0; i--) {
+    const base = bloomChain[i];
+    gl.uniform2f(u.texel, last.tx, last.ty);
+    gl.uniform1i(u.uTex, last.attach(0));
+    blit(base); last = base;
+  }
+  gl.disable(gl.BLEND);
+  gl.uniform2f(u.texel, last.tx, last.ty);
+  gl.uniform1i(u.uTex, last.attach(0));
+  gl.uniform1f(u.uValue, BLOOM_INTENSITY);
+  blit(bloom);
+}
+
+// Display programs are compiled the first time a style is used. If one fails on this GPU, fall back to Ink.
+function displayProgram(i) {
+  if (!(i in P.display)) {
+    try { P.display[i] = makeProgram(DISPLAY, '#define STYLE ' + STYLE_SHADER[i] + '\n'); }
+    catch (err) { if (window.console) console.error(err); P.display[i] = P.display[0]; }
+  }
+  return P.display[i];
+}
+// Draw the dye to the canvas in one visual style.
+function drawStyle(i, bloomOn, shadingOn) {
+  const u = displayProgram(i).use();
+  gl.uniform2f(u.texel, dye.tx * 1.5, dye.ty * 1.5);   // slightly wide stencil for a smoother normal
+  gl.uniform1i(u.uDye, dye.read.attach(0));
+  gl.uniform1i(u.uBloom, bloom.attach(1));
+  gl.uniform1f(u.uShading, shadingOn ? 1 : 0);
+  gl.uniform1f(u.uBloomOn, bloomOn && bloomChain.length >= 2 ? 1 : 0);
+  gl.uniform1i(u.uVel, velocity.read.attach(2));
+  gl.uniform1f(u.uVelScale, 1 / Math.min(velocity.w, velocity.h));
+  gl.uniform1f(u.uTime, (performance.now() / 1000) % 3600);
+  gl.uniform2f(u.uRes, canvas.width, canvas.height);
+  blit(null);
+}
+// Switching style cross-fades: the old style is drawn first, then the new one is blended over it.
+/* ------------------------------------------------------------------ *
+ *  Weave style: real strings drawn over the fluid.
+ *  Forty-four taut strings run across the screen, pinned at both edges. Each
+ *  is a chain of nodes that only move up and down, simulated as a
+ *  vibrating string (tension between neighbours + a weak pull home).
+ *  A finger grabs the strings near it and drags each one through to the
+ *  opposite side of the finger, so they converge, cross over and fan out
+ *  to the edges. On release they snap back and ripple until they settle.
+ * ------------------------------------------------------------------ */
+const WEAVE = { N: 44, M: 48, y: null, v: null, verts: null, t: 0 };
+const WEAVE_VERT = `
+attribute vec3 aPos;                // xy = clip position, z = -1..1 across the line's width
+varying float vSide;
+void main () { vSide = aPos.z; gl_Position = vec4(aPos.xy, 0.0, 1.0); }`;
+const WEAVE_FRAG = `
+precision mediump float;
+varying float vSide;
+uniform float uAlpha, uCore;
+void main () {                      // solid core with a soft edge (the canvas has no antialiasing)
+  gl_FragColor = vec4(1.0, 1.0, 1.0, uAlpha * (1.0 - smoothstep(uCore, 1.0, abs(vSide))));
+}`;
+let quadBuffer = null;              // the shared full-screen quad, re-bound after drawing lines
+
+function weaveRest(k) { return (k + 0.5) / WEAVE.N + 0.003 * Math.sin(WEAVE.t * 0.4 + k * 0.6); }
+
+function stepWeave(dt) {
+  const W = WEAVE, C = config.weave, M = W.M;
+  if (W.N !== C.count) { W.N = C.count; W.y = null; W.verts = null; }   // string count changed: start over
+  const N = W.N;
+  if (!W.y) {
+    W.y = new Float32Array(N * M); W.v = new Float32Array(N * M);
+    for (let k = 0; k < N; k++) for (let i = 0; i < M; i++) W.y[k * M + i] = (k + 0.5) / N;
+  }
+  const TENSION = C.tension, HOME = C.home, REACH = C.reach, SWAY = C.sway, CROSS = C.cross;
+  const fingers = [];
+  pointers.forEach(p => fingers.push(p));
+  fingers.sort((a, b) => a.x - b.x);
+  const cx = new Float32Array(fingers.length + 2), cy = new Float32Array(fingers.length + 2);
+  const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps, damp = Math.exp(-C.damping * h);
+  for (let s = 0; s < steps; s++) {
+    W.t += h;
+    // 1. Free string physics: tension straightens, a weak spring pulls home, a slow wave keeps it alive.
+    for (let k = 0; k < N; k++) {
+      const rest = weaveRest(k), o = k * M;
+      W.y[o] = W.y[o + M - 1] = rest;                              // pinned at the screen edges
+      for (let i = 1; i < M - 1; i++) {
+        const y = W.y[o + i];
+        const a = TENSION * (W.y[o + i - 1] + W.y[o + i + 1] - 2 * y) + HOME * (rest - y)
+                + SWAY * Math.sin(i * 0.4 - W.t * 0.9 + k * 0.9);
+        W.v[o + i] = (W.v[o + i] + a * h) * damp;
+      }
+    }
+    for (let n = 0; n < N * M; n++) W.y[n] += W.v[n] * h;
+    // 2. Fingers: every string within reach is placed exactly on the shape a taut string would take,
+    //    straight lines from the screen edge through each finger to the other edge. There is no easing,
+    //    so the strings are on the finger in the very first frame after a touch and never lag behind it.
+    if (!fingers.length) continue;
+    for (let k = 0; k < N; k++) {
+      const rest = weaveRest(k), o = k * M;
+      let nc = 1;
+      cx[0] = 0; cy[0] = rest;
+      for (let f = 0; f < fingers.length; f++) {
+        const d = Math.abs(rest - fingers[f].y);
+        if (d >= REACH) continue;
+        let w = 1 - d / REACH; w *= w;
+        // Pulled toward the finger, and with Cross-over above 0 through to its far side.
+        cx[nc] = Math.min(0.98, Math.max(0.02, fingers[f].x)) * (M - 1);
+        cy[nc] = fingers[f].y + (rest - fingers[f].y) * (1 - w) - (rest - fingers[f].y) * CROSS * w;
+        nc++;
+      }
+      if (nc === 1) continue;                                      // no finger within reach of this string
+      cx[nc] = M - 1; cy[nc] = rest; nc++;
+      let seg = 0;
+      for (let i = 1; i < M - 1; i++) {
+        while (seg < nc - 2 && i > cx[seg + 1]) seg++;
+        const span = cx[seg + 1] - cx[seg];
+        W.y[o + i] = span > 1e-6 ? cy[seg] + (cy[seg + 1] - cy[seg]) * (i - cx[seg]) / span : cy[seg + 1];
+        W.v[o + i] = 0;
+      }
+    }
+  }
+}
+
+function drawWeave(alpha) {
+  const W = WEAVE, N = W.N, M = W.M;
+  if (!W.y) return;
+  if (!P.weave) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, WEAVE_VERT));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, WEAVE_FRAG));
+    gl.bindAttribLocation(p, 0, 'aPos');
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    P.weave = { p, uAlpha: gl.getUniformLocation(p, 'uAlpha'), uCore: gl.getUniformLocation(p, 'uCore'), buf: gl.createBuffer() };
+  }
+  // Each segment becomes a thin quad: line width in pixels plus a soft edge. Neighbouring quads
+  // share their corner points (one normal per node), so there are no gaps at the bends.
+  const cw = canvas.width, ch = canvas.height;
+  const core = config.weave.width * Math.min(window.devicePixelRatio || 1, 2), hw = core + 0.75;
+  if (!W.verts) { W.verts = new Float32Array(N * (M - 1) * 18); W.nx = new Float32Array(M); W.ny = new Float32Array(M); }
+  const out = W.verts, NX = W.nx, NY = W.ny;
+  let n = 0;
+  for (let k = 0; k < N; k++) {
+    const o = k * M;
+    for (let i = 0; i < M; i++) {
+      const a = Math.max(0, i - 1), b = Math.min(M - 1, i + 1);
+      const dx = (b - a) / (M - 1) * cw, dy = (W.y[o + b] - W.y[o + a]) * ch, len = Math.sqrt(dx * dx + dy * dy) || 1;
+      NX[i] = -dy / len * hw * 2 / cw; NY[i] = dx / len * hw * 2 / ch;
+    }
+    for (let i = 0; i < M - 1; i++) {
+      const ax = i / (M - 1) * 2 - 1, ay = W.y[o + i] * 2 - 1, bx = (i + 1) / (M - 1) * 2 - 1, by = W.y[o + i + 1] * 2 - 1;
+      out[n++] = ax + NX[i]; out[n++] = ay + NY[i]; out[n++] = 1;
+      out[n++] = ax - NX[i]; out[n++] = ay - NY[i]; out[n++] = -1;
+      out[n++] = bx + NX[i + 1]; out[n++] = by + NY[i + 1]; out[n++] = 1;
+      out[n++] = bx + NX[i + 1]; out[n++] = by + NY[i + 1]; out[n++] = 1;
+      out[n++] = ax - NX[i]; out[n++] = ay - NY[i]; out[n++] = -1;
+      out[n++] = bx - NX[i + 1]; out[n++] = by - NY[i + 1]; out[n++] = -1;
+    }
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  gl.useProgram(P.weave.p);
+  gl.uniform1f(P.weave.uAlpha, config.weave.bright * alpha);
+  gl.uniform1f(P.weave.uCore, core / hw);
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.weave.buf);
+  gl.bufferData(gl.ARRAY_BUFFER, out, gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.drawArrays(gl.TRIANGLES, 0, n / 3);
+  gl.disable(gl.BLEND);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);                       // hand the quad back to the other passes
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+}
+// How visible a line overlay ('weave' or 'threads') is right now; it fades with the style morph.
+function lineAlpha(kind, t) {
+  return (STYLES[config.style].lines === kind ? t : 0) + (morph && STYLES[morph.from].lines === kind ? 1 - t : 0);
+}
+function linesActive(kind) { return STYLES[config.style].lines === kind || !!(morph && STYLES[morph.from].lines === kind); }
+
+/* ------------------------------------------------------------------ *
+ *  Threads style: a thicket of hair-thin, see-through lines.
+ *  A few hundred threads, each a short chain of straight segments, hang
+ *  in a loose web of mostly horizontal and vertical runs. They are drawn
+ *  additively, so the picture glows wherever many of them bunch up.
+ *  A stroke claims a share of the threads and they snap to it at once:
+ *  one node of each sits exactly on the finger, the next ones lie along
+ *  the path the finger has drawn, and the two ends stay put. Holding still gathers them into a fan on
+ *  one point; moving strings them along the path, tracing its shape in
+ *  straight pieces. After release each thread lets go at its own pace.
+ * ------------------------------------------------------------------ */
+const THREADS = { K: 0, n: 8, t: 0, hue: 0.15, hueTarget: 0.15, paths: [] };
+const THREADS_VERT = `
+attribute vec3 aPos;                // xy = clip position, z = -1..1 across the line's width
+attribute vec3 aCol;
+varying float vSide; varying vec3 vCol;
+void main () { vSide = aPos.z; vCol = aCol; gl_Position = vec4(aPos.xy, 0.0, 1.0); }`;
+const THREADS_FRAG = `
+precision mediump float;
+varying float vSide; varying vec3 vCol;
+uniform float uAlpha, uCore;
+void main () { gl_FragColor = vec4(vCol, uAlpha * (1.0 - smoothstep(uCore, 1.0, abs(vSide)))); }`;
+
+function initThreads(K) {
+  const T = THREADS, n = T.n, r = Math.random;
+  T.K = K; T.verts = null;
+  ['px', 'py', 'vx', 'vy', 'hx', 'hy'].forEach(a => { T[a] = new Float32Array(K * n); });
+  ['delay', 'gap', 'kf', 'kh', 'rise', 'fall', 'e', 'hueVar', 'sat', 'ph', 'ox', 'oy'].forEach(a => { T[a] = new Float32Array(K); });
+  T.path = new Array(K).fill(null);
+  for (let k = 0; k < K; k++) {
+    // Resting shape: a zigzag across the screen, mostly in horizontal and vertical steps.
+    let x = r(), y = r();
+    const diagonal = r() < 0.3;
+    let horizontal = r() < 0.5;
+    for (let j = 0; j < n; j++) {
+      T.hx[k * n + j] = T.px[k * n + j] = x; T.hy[k * n + j] = T.py[k * n + j] = y;
+      const d = (0.15 + 0.6 * r()) * (r() < 0.5 ? -1 : 1);
+      if (diagonal || horizontal) x = Math.min(1.02, Math.max(-0.02, x + d));
+      if (diagonal || !horizontal) y = Math.min(1.02, Math.max(-0.02, y + (diagonal ? (r() - 0.5) * 0.8 : d)));
+      horizontal = !horizontal;
+    }
+    T.delay[k] = Math.pow(r(), 1.5) * 1.6;            // how far behind the finger this thread follows (s)
+    T.gap[k] = 0.1 + 0.35 * r();                      // spacing of its nodes along the path (s)
+    const ang = r() * 6.283, rad = Math.sqrt(r()) * 0.05 * (0.4 + T.delay[k]);
+    T.ox[k] = Math.cos(ang) * rad; T.oy[k] = Math.sin(ang) * rad;   // sideways offset, so outlines nest instead of piling up
+    T.kf[k] = 30 + 110 * r(); T.kh[k] = 4 + 6 * r();  // spring strength when following / going home
+    T.rise[k] = 1 + 5 * r(); T.fall[k] = 0.15 + 0.65 * r();
+    T.hueVar[k] = r() < 0.12 ? (r() - 0.5) * 0.9 : (r() - 0.5) * 0.07;   // a few odd-coloured threads
+    T.sat[k] = r() < 0.1 ? 0.15 : 0.55 + 0.45 * r();
+    T.ph[k] = r() * 6.283;
+  }
+}
+// Position on a recorded finger path at time tt (clamped to its ends). pts = [t, x, y, t, x, y, ...]
+function pathAt(pts, tt, out) {
+  const m = pts.length / 3;
+  if (tt <= pts[0]) { out[0] = pts[1]; out[1] = pts[2]; return; }
+  if (tt >= pts[(m - 1) * 3]) { out[0] = pts[(m - 1) * 3 + 1]; out[1] = pts[(m - 1) * 3 + 2]; return; }
+  let lo = 0, hi = m - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pts[mid * 3] <= tt) lo = mid; else hi = mid; }
+  const a = lo * 3, b = hi * 3, f = (tt - pts[a]) / (pts[b] - pts[a] || 1);
+  out[0] = pts[a + 1] + (pts[b + 1] - pts[a + 1]) * f; out[1] = pts[a + 2] + (pts[b + 2] - pts[a + 2]) * f;
+}
+function stepThreads(dt) {
+  const T = THREADS, C = config.threads, n = T.n;
+  if (T.K !== C.count) initThreads(C.count);
+  const K = T.K;
+  T.t += dt;
+  // Record each finger's path; a new stroke claims a random share of the threads.
+  T.paths.forEach(q => { if (q.live && !pointers.has(q.id)) q.live = false; });
+  pointers.forEach((p, id) => {
+    let q = T.paths.find(o => o.live && o.id === id);
+    if (!q) {
+      q = { id, live: true, pts: [] };
+      T.paths.push(q);
+      for (let k = 0; k < K; k++) if (Math.random() < C.share) { T.path[k] = q; T.e[k] *= 0.3; }
+      if (T.paths.length > 8) {
+        const old = T.paths.shift();
+        for (let k = 0; k < K; k++) if (T.path[k] === old) T.path[k] = null;
+      }
+    }
+    q.pts.push(T.t, p.x, p.y);
+    if (q.pts.length > 1500) q.pts.splice(0, 300);                  // keep the last few seconds
+    T.hueTarget = p.hue;
+  });
+  // The colour of the whole web drifts toward the hue of the current stroke.
+  let dh = T.hueTarget - T.hue; dh -= Math.round(dh);
+  T.hue = (T.hue + dh * Math.min(1, dt * 1.5) + 1) % 1;
+
+  const pt = [0, 0];
+  for (let k = 0; k < K; k++) {
+    const q = T.path[k], on = q && q.live;
+    // Claimed threads are fully on at once; after release each lets go at its own pace.
+    if (on) T.e[k] = 1; else T.e[k] -= T.e[k] * (1 - Math.exp(-T.fall[k] / C.linger * dt));
+    const e = T.e[k];
+    if (q && !on && e < 0.01) T.path[k] = null;
+    const ks = T.kh[k] + (T.kf[k] - T.kh[k]) * e, damp = Math.exp(-1.2 * Math.sqrt(ks) * dt);
+    const end = q && q.pts.length ? q.pts[q.pts.length - 3] : 0;
+    for (let j = 0; j < n; j++) {
+      const o = k * n + j;
+      // home, with a slow drift so the web never sits still
+      let tx = T.hx[o] + C.drift * 0.012 * Math.sin(T.t * 0.31 + T.ph[k] + j * 1.7);
+      let ty = T.hy[o] + C.drift * 0.012 * Math.cos(T.t * 0.27 + T.ph[k] * 1.3 + j * 2.1);
+      if (q && e > 0.001 && j > 0 && j < n - 1 && q.pts.length) {    // inner nodes sit on the path
+        if (j === 1) { pt[0] = q.pts[q.pts.length - 2]; pt[1] = q.pts[q.pts.length - 1]; }   // lead node: on the finger itself
+        else {
+          pathAt(q.pts, end - (T.delay[k] + (j - 1) * T.gap[k]) * C.trail, pt);              // the rest trail along the stroke
+          pt[0] += T.ox[k] * C.spread; pt[1] += T.oy[k] * C.spread;
+        }
+        tx += (pt[0] - tx) * e; ty += (pt[1] - ty) * e;
+        if (on) {                                                    // while touched: placed exactly, no spring, no lag
+          T.px[o] = tx; T.py[o] = ty; T.vx[o] = T.vy[o] = 0;
+          continue;
+        }
+      }
+      T.vx[o] = (T.vx[o] + ks * (tx - T.px[o]) * dt) * damp; T.vy[o] = (T.vy[o] + ks * (ty - T.py[o]) * dt) * damp;
+      T.px[o] += T.vx[o] * dt; T.py[o] += T.vy[o] * dt;
+    }
+  }
+}
+function drawThreads(alpha) {
+  const T = THREADS, C = config.threads, K = T.K, n = T.n;
+  if (!K) return;
+  if (!P.threads) {
+    const p = gl.createProgram();
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, THREADS_VERT));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, THREADS_FRAG));
+    gl.bindAttribLocation(p, 0, 'aPos'); gl.bindAttribLocation(p, 1, 'aCol');
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    P.threads = { p, uAlpha: gl.getUniformLocation(p, 'uAlpha'), uCore: gl.getUniformLocation(p, 'uCore'), buf: gl.createBuffer() };
+  }
+  const cw = canvas.width, ch = canvas.height;
+  const core = C.width * Math.min(window.devicePixelRatio || 1, 2), hw = core + 0.6;
+  if (!T.verts) T.verts = new Float32Array(K * (n - 1) * 36);
+  const out = T.verts;
+  let m = 0;
+  for (let k = 0; k < K; k++) {
+    const c = hsv((T.hue + T.hueVar[k] + 2) % 1, T.sat[k], 0.4 + 0.6 * T.e[k]);   // resting threads are dimmer
+    for (let j = 0; j < n - 1; j++) {
+      const o = k * n + j;
+      const ax = T.px[o] * 2 - 1, ay = T.py[o] * 2 - 1, bx = T.px[o + 1] * 2 - 1, by = T.py[o + 1] * 2 - 1;
+      const dx = (bx - ax) * cw, dy = (by - ay) * ch, len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const nx = -dy / len * hw * 2 / cw, ny = dx / len * hw * 2 / ch;
+      const q = [ax + nx, ay + ny, 1, ax - nx, ay - ny, -1, bx + nx, by + ny, 1, bx + nx, by + ny, 1, ax - nx, ay - ny, -1, bx - nx, by - ny, -1];
+      for (let v = 0; v < 18; v += 3) {
+        out[m++] = q[v]; out[m++] = q[v + 1]; out[m++] = q[v + 2]; out[m++] = c[0]; out[m++] = c[1]; out[m++] = c[2];
+      }
+    }
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+  gl.useProgram(P.threads.p);
+  gl.uniform1f(P.threads.uAlpha, C.bright * alpha);
+  gl.uniform1f(P.threads.uCore, core / hw);
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.threads.buf);
+  gl.bufferData(gl.ARRAY_BUFFER, out, gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);                               // additive: overlaps glow
+  gl.drawArrays(gl.TRIANGLES, 0, m / 6);
+  gl.disable(gl.BLEND);
+  gl.disableVertexAttribArray(1);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);                       // hand the quad back to the other passes
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+}
+
+const MORPH_SECONDS = 1.6;
+let morph = null;                             // { from, bloom, shading, start } while a fade is running
+function render() {
+  let t = 1;
+  if (morph) {
+    t = (performance.now() - morph.start) / (morph.seconds * 1000);
+    if (t >= 1) { morph = null; t = 1; }
+  }
+  if (config.bloom || (morph && morph.bloom)) renderBloom();
+  gl.disable(gl.BLEND);
+  const e = t * t * (3 - 2 * t);                                     // ease in and out
+  if (!morph) drawStyle(config.style, config.bloom, config.shading);
+  else {
+    drawStyle(morph.from, morph.bloom, morph.shading);
+    gl.enable(gl.BLEND);
+    gl.blendColor(0, 0, 0, e);
+    gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+    drawStyle(config.style, config.bloom, config.shading);
+    gl.disable(gl.BLEND);
+  }
+  const strings = lineAlpha('weave', e), threads = lineAlpha('threads', e);
+  if (strings > 0.001) drawWeave(strings);
+  if (threads > 0.001) drawThreads(threads);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Splats
+ * ------------------------------------------------------------------ */
+// Scale that converts uv offsets into "short edge" units, so splats stay round.
+function uvScale() {
+  const a = canvas.width / canvas.height;
+  return a >= 1 ? [a, 1] : [1, 1 / a];
+}
+// x, y in uv; vx, vy in grid cells / second; rgb = dye to add.
+function splat(x, y, vx, vy, rgb, radiusMul) {
+  const sc = uvScale();
+  const u = P.splat.use();
+  gl.disable(gl.BLEND);
+  gl.uniform2f(u.texel, 0, 0);
+  gl.uniform2f(u.scale, sc[0], sc[1]);
+  gl.uniform2f(u.point, x, y);
+  gl.uniform1f(u.radius, config.radius / 100 * (radiusMul || 1));
+  if (vx || vy) {
+    gl.uniform1i(u.uTarget, velocity.read.attach(0));
+    gl.uniform3f(u.color, vx, vy, 0);
+    blit(velocity.write); velocity.swap();
+  }
+  gl.uniform1i(u.uTarget, dye.read.attach(0));
+  gl.uniform3f(u.color, rgb[0], rgb[1], rgb[2]);
+  blit(dye.write); dye.swap();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Visual styles. Each one picks a display shader (by index), default
+ *  slider values, how strongly dye rises, and the colours strokes use.
+ *  set = [dye dissipation, velocity dissipation, vorticity, splat radius]
+ * ------------------------------------------------------------------ */
+const GREY = () => [0.6, 0.6, 0.6];                       // for styles that only look at dye density
+const STYLES = [
+  { name: 'Ink',         set: [0.60, 0.15, 22, 0.10], bloom: true,  shading: true,  buoy: 0,    gain: 1,   color: h => hsv(h, 1, 1) },
+  { name: 'Galaxy',      set: [0.25, 0.10, 30, 0.20], bloom: true,  shading: false, buoy: 0,    gain: 1,   color: h => hsv(0.55 + 0.37 * h, 0.9, 1) },
+  { name: 'Smoke',       set: [0.70, 0.10, 12, 0.30], bloom: false, shading: false, buoy: 0.35, gain: 1.5, color: GREY },
+  { name: 'Fire',        set: [2.20, 0.30, 35, 0.20], bloom: true,  shading: false, buoy: 0.9,  gain: 3,   color: GREY },
+  { name: 'Lava lamp',   set: [0.30, 1.20, 0,  0.20], bloom: true,  shading: true,  buoy: 0,    gain: 1.5, color: h => hsv([0.0, 0.07, 0.92][Math.floor(h * 3) % 3], 1, 1) },
+  { name: 'Watercolour', set: [0.12, 2.50, 4,  0.30], bloom: false, shading: true,  buoy: 0,    gain: 1,   color: h => hsv(h, 0.8, 1) },
+  { name: 'Neon',        set: [0.50, 0.10, 25, 0.25], bloom: true,  shading: false, buoy: 0,    gain: 1,   color: h => hsv(h, 1, 1) },
+  { name: 'Aurora',      set: [0.50, 0.40, 10, 0.20], bloom: true,  shading: false, buoy: 0,    gain: 1,   color: h => hsv(h < 0.6 ? 0.33 + 0.15 * h : 0.70 + 0.2 * (h - 0.6), 0.9, 1) },
+  { name: 'Deep sea',    set: [0.20, 0.10, 25, 0.30], bloom: true,  shading: false, buoy: 0,    gain: 1,   color: h => hsv(0.45 + 0.12 * h, 0.9, 1) },
+  { name: 'Marble',      set: [0.00, 0.25, 28, 0.20], bloom: false, shading: true,  buoy: 0,    gain: 1,   color: h => hsv(h, 0.6, 0.8) },
+  { name: 'Pixel',       set: [0.60, 0.15, 22, 0.20], bloom: false, shading: false, buoy: 0,    gain: 1,   color: h => hsv(h, 1, 1) },
+  { name: 'Milk ink',    set: [0.15, 0.40, 18, 0.14], bloom: false, shading: true,  buoy: 0,    gain: 1,   color: h => hsv(h, 1, 1) },
+  { name: 'Strings',     scroll: 0.25, set: [0.90, 0.80, 15, 0.30], bloom: false, shading: false, buoy: 0,    gain: 1,   color: h => hsv(h, 1, 1) },
+  { name: 'Weave',       lines: 'weave',   set: [1.20, 0.30, 15, 0.25], bloom: false, shading: false, buoy: 0,    gain: 1,   color: h => hsv(h, 1, 1) },
+  { name: 'Threads',     lines: 'threads', set: [1.50, 0.30, 15, 0.25], bloom: false, shading: false, buoy: 0,    gain: 0.5, color: h => hsv(h, 1, 1) }
+];
+// Which STYLE branch of the display shader each entry above uses (numbers 2, 7 and 8 are unused).
+const STYLE_SHADER = [0, 1, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 16];
+// Dye colour for a stroke hue (0..1) in the current style.
+function styleColor(h) {
+  const st = STYLES[config.style];
+  return st.color(h).map(v => v * st.gain);
+}
+
+function hsv(h, s, v) {
+  const i = Math.floor(h * 6), f = h * 6 - i, p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
+  return [[v, t, p], [q, v, p], [p, v, t], [p, q, v], [t, p, v], [v, p, q]][i % 6];
+}
+
+function burst(count) {
+  const shortCells = Math.min(velocity.w, velocity.h);
+  for (let i = 0; i < count; i++) {
+    const c = styleColor(Math.random()).map(v => v * 3);
+    const ang = Math.random() * Math.PI * 2, speed = (1.5 + Math.random() * 2.5) * shortCells;
+    splat(0.1 + Math.random() * 0.8, 0.1 + Math.random() * 0.8, Math.cos(ang) * speed, Math.sin(ang) * speed, c, 1.5);
+  }
+}
+function clearFluid() {
+  [velocity.read, velocity.write, dye.read, dye.write, pressure.read, pressure.write].forEach(clearTarget);
+}
+function clearAll() {
+  audio.clear();                              // also drop every looping touch sound
+  clearFluid();
+}
+
+/* ------------------------------------------------------------------ *
+ *  Audio: a synthesised minimal-techno track that reacts to painting.
+ *  Everything is generated with Web Audio; nothing is loaded.
+ *
+ *  - The backing track rearranges itself every 8 bars (new bassline, root
+ *    note, hat and percussion pattern, sometimes a short breakdown).
+ *  - Each touch drops one sound onto the next 16th step of a one-bar loop.
+ *    What a touch adds rotates every 4 bars: plucks, bells, stabs, hi-hats, drums, acid.
+ *    Higher on screen = higher pitch / tighter sound.
+ *  - Every added sound repeats for a few bars, fading, then disappears.
+ *    One sound per step per instrument and a global cap keep the mix sparse.
+ *  - Moving fast while pressed builds "energy", which brings in an acid
+ *    line that follows the pointer's height and opens its filter.
+ * ------------------------------------------------------------------ */
+const audio = (function () {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  let STEP = 60 / config.bpm / 4;                              // one 16th note
+  const SCALE = [57, 60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84];    // A minor pentatonic
+  const KINDS = {                                                    // repeats per sound, gain per repeat
+    note: { life: 5, fade: 0.75, label: 'pluck notes' },
+    bell: { life: 5, fade: 0.75, label: 'bell notes' },
+    stab: { life: 5, fade: 0.75, label: 'chord stabs' },
+    hat:  { life: 6, fade: 0.80, label: 'hi-hats' },
+    arp: { life: 5, fade: 0.78, label: 'melody' },
+    acid: { life: 6, fade: 0.80, label: 'acid' },
+    acid2: { life: 8, fade: 0.88, label: 'acid bassline' },
+    trance: { life: 4, fade: 0.8, label: 'trance synth' },
+    pluck: { life: 5, fade: 0.75, label: 'plucked string' },
+    choir: { life: 5, fade: 0.75, label: 'choir' },
+    vox: { life: 5, fade: 0.75, label: 'vocal chops' }
+  };
+  const ROTATION = ['note', 'hat', 'acid', 'bell', 'pluck', 'arp', 'acid2', 'stab', 'trance', 'choir', 'vox'];  // what a touch adds, per 4 bars
+  const BASS_PATTERNS = [                                            // step -> semitones above root
+    { 2: 0, 6: 0, 10: 0, 14: 0 },
+    { 2: 0, 3: 0, 6: 0, 10: 0, 11: 0, 14: 12 },
+    { 3: 0, 6: 0, 10: 7, 13: 0, 14: 0 },
+    { 2: 0, 6: 12, 10: 0, 14: 12 },
+    { 1: 0, 2: 0, 3: 0, 5: 0, 6: 0, 7: 0, 9: 0, 10: 0, 11: 0, 13: 0, 14: 0, 15: 0 }
+  ];
+  const ROOTS = [33, 33, 36, 31, 29];                                // A, C, G, F all sit under the scale
+  const MAX_LAYERS = 10;
+  // Backing drum kits, light to heavy. f0 -> f1 over "sweep" seconds is the kick's pitch drop;
+  // pre = how hard the kick hits the saturator; rumble = send into the low, delayed rumble tail.
+  const KITS = [
+    { f0: 95,  f1: 48, sweep: 0.07, dur: 0.20, gain: 0.60, click: 0,    pre: 0.25, rumble: 0,    hat: 0.60 },   // Soft
+    { f0: 140, f1: 42, sweep: 0.12, dur: 0.32, gain: 0.90, click: 0,    pre: 0.30, rumble: 0,    hat: 1.00 },   // Classic
+    { f0: 260, f1: 50, sweep: 0.05, dur: 0.24, gain: 0.90, click: 0.25, pre: 0.45, rumble: 0,    hat: 1.00 },   // Punchy
+    { f0: 110, f1: 34, sweep: 0.16, dur: 0.50, gain: 1.00, click: 0,    pre: 0.35, rumble: 0.15, hat: 0.85 },   // Deep
+    { f0: 200, f1: 44, sweep: 0.09, dur: 0.36, gain: 0.95, click: 0.30, pre: 1.00, rumble: 0.25, hat: 1.10 },   // Hard
+    { f0: 170, f1: 38, sweep: 0.14, dur: 0.45, gain: 1.00, click: 0.20, pre: 2.20, rumble: 0.70, hat: 1.15 },   // Dirty
+    { f0: 80,  f1: 46, sweep: 0.06, dur: 0.16, gain: 0.42, click: 0,    pre: 0.20, rumble: 0,    hat: 0.45 },   // Velvet (softest; shown first)
+    { f0: 210, f1: 40, sweep: 0.12, dur: 0.48, gain: 1.00, click: 0.35, pre: 4.50, rumble: 0.90, hat: 1.20 },   // Nasty
+    { f0: 380, f1: 62, sweep: 0.05, dur: 0.16, gain: 1.00, click: 0.40, pre: 9.00, rumble: 0,    hat: 1.20, bounce: 62 }   // Hardcore (frenchcore: very short hard kick, distorted bass note on the offbeat)
+  ];
+  const saturation = pre => Math.tanh(2.5 * Math.min(1, pre)) / Math.tanh(2.5);
+  let chain, acidCurve;                                              // the current touch-sound chain (see touchChain)
+  let breakAt = -1, inBreak = false, breakNow = false, breakForced = false;                                 // bar where the next break starts
+
+  let ctx, master, drums, layerBus, dryBus, duck, echoFb, echoDelay, acidIn, tb, hatBus, bassShelf, kickPre, kickPost, rumbleSend, rumbleDelay, rumbleDuck, noise, timer = 0, next = 0, step = 0;
+  let energy = 0, energyTarget = 0, motionY = 0.5;
+  let sec = { bass: 0, root: 33, hat: 2, perc: 0, breakdown: false };
+  const layers = [];
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+  const rand = n => Math.floor(Math.random() * n);
+  const pick = (y, n) => Math.min(n - 1, Math.max(0, Math.floor(y * n)));
+
+  function build() {
+    ctx = new AC();
+    // master -> limiter-ish compressor -> speakers
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.ratio.value = 6; comp.attack.value = 0.005; comp.release.value = 0.15;
+    master = ctx.createGain(); master.gain.value = 0.8;                // full level: loudness is set with the device's own volume
+    master.connect(comp); comp.connect(ctx.destination);
+    // backing track bus -> low shelf (the Bass slider) -> master
+    drums = ctx.createGain(); bassShelf = ctx.createBiquadFilter();
+    bassShelf.type = 'lowshelf'; bassShelf.frequency.value = 130; bassShelf.gain.value = (config.bass - 1) * 12;
+    drums.connect(bassShelf); bassShelf.connect(master);
+    hatBus = ctx.createGain(); hatBus.gain.value = (KITS[config.kit] || KITS[1]).hat; hatBus.connect(drums);
+    // kick -> saturator (drive set per kit) -> drums, plus a send into the rumble:
+    // a 16th-note feedback delay kept below ~100 Hz that ducks out of the way of each kick
+    kickPre = ctx.createGain(); kickPost = ctx.createGain();
+    const kickSat = ctx.createWaveShaper(), satCurve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) satCurve[i] = Math.tanh((i / 511.5 - 1) * 2.5) / Math.tanh(2.5);
+    kickSat.curve = satCurve;
+    kickPre.connect(kickSat); kickSat.connect(kickPost); kickPost.connect(drums);
+    rumbleSend = ctx.createGain(); rumbleSend.gain.value = 0;
+    rumbleDelay = ctx.createDelay(1); rumbleDelay.delayTime.value = STEP;
+    rumbleDuck = ctx.createGain();
+    const rumbleFb = ctx.createGain(), rumbleLp = ctx.createBiquadFilter(), rumbleOut = ctx.createGain();
+    rumbleFb.gain.value = 0.55; rumbleLp.type = 'lowpass'; rumbleLp.frequency.value = 100; rumbleOut.gain.value = 0.7;
+    kickPost.connect(rumbleSend); rumbleSend.connect(rumbleDelay); rumbleDelay.connect(rumbleLp);
+    rumbleLp.connect(rumbleFb); rumbleFb.connect(rumbleDelay);
+    rumbleLp.connect(rumbleDuck); rumbleDuck.connect(rumbleOut); rumbleOut.connect(drums);
+    // touch sounds are ducked by the kick; the chain they play through is built in touchChain()
+    duck = ctx.createGain(); duck.connect(master);
+    acidCurve = new Float32Array(1024);                    // soft clipping for the acid voices: a gritty, sawing edge
+    for (let i = 0; i < 1024; i++) acidCurve[i] = Math.tanh((i / 511.5 - 1) * 2.8);
+    touchChain();
+    // Acid bassline: one always-running 303-style mono synth. A single saw feeds two lowpass
+    // stages (24 dB/oct, the first one resonant), a gate, then overdrive. Because the oscillator
+    // never stops, notes can slide into each other.
+    tb = { osc: ctx.createOscillator(), f1: ctx.createBiquadFilter(), f2: ctx.createBiquadFilter(), vca: ctx.createGain() };
+    const tbDrive = ctx.createWaveShaper(), tbOut = ctx.createGain(), tbSend = ctx.createGain(), curve2 = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) curve2[i] = Math.tanh((i / 511.5 - 1) * 4);
+    tb.osc.type = 'sawtooth'; tb.osc.frequency.value = 110;
+    tb.f1.type = tb.f2.type = 'lowpass'; tb.f1.Q.value = 14; tb.f2.Q.value = 0.7;
+    tb.f1.frequency.value = tb.f2.frequency.value = 400;
+    tb.vca.gain.value = 0; tbDrive.curve = curve2; tbOut.gain.value = 0.14; tbSend.gain.value = 0.3;
+    tb.osc.connect(tb.f1); tb.f1.connect(tb.f2); tb.f2.connect(tb.vca); tb.vca.connect(tbDrive); tbDrive.connect(tbOut);
+    tbOut.connect(duck);                                   // mostly dry so the low end stays tight
+    tbOut.connect(tbSend); tbSend.connect(layerBus); tb.send = tbSend;   // a little echo
+    tb.osc.start();
+    // one second of white noise shared by hats, rim, clap
+    noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const d = noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    planBreak(8);
+  }
+
+  /* ---- voices ---- */
+  function decay(g, t, peak, dur) {
+    g.gain.setValueAtTime(Math.max(peak, 0.0002), t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  }
+  function out(node, dest, pan) {                                    // connect, optionally panned
+    if (pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan; node.connect(p); p.connect(dest); }
+    else node.connect(dest);
+  }
+  function kick(t) {
+    const k = KITS[config.kit];
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(k.f0, t); o.frequency.exponentialRampToValueAtTime(k.f1, t + k.sweep);
+    decay(g, t, 1, k.dur);
+    o.connect(g); g.connect(kickPre); o.start(t); o.stop(t + k.dur + 0.03);
+    if (k.click) noiseHit(t, 'highpass', 3000, 1, k.click, 0.012, kickPre);        // beater click
+    if (k.bounce) {                                                                // offbeat bass note through the same overdrive
+      const bo = ctx.createOscillator(), bg = ctx.createGain(), b0 = t + STEP * 2, b1 = t + STEP * 4;
+      bo.frequency.value = k.bounce;
+      bg.gain.setValueAtTime(0, b0); bg.gain.linearRampToValueAtTime(0.15, b0 + 0.01);
+      bg.gain.setValueAtTime(0.15, b1 - 0.03); bg.gain.linearRampToValueAtTime(0, b1 - 0.004);
+      bo.connect(bg); bg.connect(kickPre); bo.start(b0); bo.stop(b1);
+    }
+    kickPre.gain.setValueAtTime(k.pre, t);
+    kickPost.gain.setValueAtTime(k.gain / saturation(k.pre), t);                    // level-matched after the drive
+    rumbleSend.gain.setValueAtTime(k.rumble, t);
+    hatBus.gain.setTargetAtTime(k.hat, t, 0.05);
+    // sidechain: touch sounds and the rumble dip under each kick
+    duck.gain.setValueAtTime(0.45, t); duck.gain.linearRampToValueAtTime(1, t + STEP * 2);
+    rumbleDuck.gain.setValueAtTime(0, t); rumbleDuck.gain.linearRampToValueAtTime(1, t + STEP * 1.5);
+  }
+  // Decide when the next break starts: roughly every two minutes, sometimes sooner or later.
+  function planBreak(fromBar) {
+    const seconds = 75 + Math.random() * 95;
+    breakAt = fromBar + Math.max(24, Math.round(seconds / (16 * STEP) / 8) * 8);
+  }
+  // Breakdown pad: a soft chord held for the whole 8-bar break; its filter opens through the build-up.
+  function pad(t, root) {
+    const dur = STEP * 126, f = ctx.createBiquadFilter(), g = ctx.createGain();
+    f.type = 'lowpass'; f.Q.value = 1;
+    f.frequency.setValueAtTime(500, t); f.frequency.setValueAtTime(500, t + STEP * 64);
+    f.frequency.exponentialRampToValueAtTime(3500, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.05, t + STEP * 16);
+    g.gain.setValueAtTime(0.05, t + dur - 0.05); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+    [24, 31, 36, 38].forEach((semi, n) => {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = hz(root + semi); o.detune.value = (n % 2 ? 8 : -8);
+      o.connect(f); o.start(t); o.stop(t + dur + 0.05);
+    });
+    f.connect(g); g.connect(duck);
+  }
+  /* ---- build-ups ----
+   * Every break is 4 quiet bars and then a 4-bar build-up into the drop. Each break picks one of
+   * eight build-ups (never the same one twice in a row). 0-4 have a sweep under them, 5-7 are drums only:
+   *   0 snare roll      quarters -> 8ths -> 16ths under a noise sweep (the original)
+   *   1 kick roll       short kicks that double up and climb in pitch, under a rising synth tone
+   *   2 claps + siren   claps that close in, under a wobbling siren tone
+   *   3 toms            a tom pattern climbing in pitch, with a late noise swell, straight into the drop
+   *   4 gated noise     a stuttering noise sweep with a snare roll that ends in 32nds
+   *   5 hi-hats         closed hats getting denser (8ths, 16ths, 32nds) with open hats on the offbeat
+   *   6 heartbeat       a low lub-dub, rim clicks joining, then half a bar of silence and one clap flam
+   *   7 shaker + rim    a steady shaker with rim clicks that fill in, and a short snare fill at the end
+   */
+  const BUILDS = 8;
+  let buildKind = 0;
+  // Noise swept upward, cut just before the drop. gated = chopped into 16ths. steps = how long it lasts.
+  function riser(t, gated, steps) {
+    const dur = STEP * (steps || 62), src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    src.buffer = noise; src.loop = true;
+    f.type = 'bandpass'; f.Q.value = 2;
+    f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(9000, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(gated ? 0.2 : 0.12, t + dur);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.03);
+    let last = g;
+    if (gated) {
+      const chop = ctx.createGain();
+      for (let k = 0; k * STEP < dur; k++) { chop.gain.setValueAtTime(1, t + k * STEP); chop.gain.setValueAtTime(0.08, t + (k + 0.5) * STEP); }
+      g.connect(chop); last = chop;
+    }
+    src.connect(f); f.connect(g); last.connect(drums); src.start(t); src.stop(t + dur + 0.05);
+  }
+  // A synth tone climbing two octaves, kept low and mellow (the filter only opens to 2 kHz).
+  // siren = with a gentle wobble that speeds up.
+  function toneRiser(t, siren) {
+    const dur = STEP * 62, f = ctx.createBiquadFilter(), g = ctx.createGain();
+    f.type = 'lowpass'; f.Q.value = 1;
+    f.frequency.setValueAtTime(350, t); f.frequency.exponentialRampToValueAtTime(2000, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.05, t + dur);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.03);
+    let lfo, depth;
+    if (siren) {
+      lfo = ctx.createOscillator(); depth = ctx.createGain();
+      lfo.frequency.setValueAtTime(2, t); lfo.frequency.exponentialRampToValueAtTime(8, t + dur);
+      depth.gain.value = 60;                                         // cents
+      lfo.connect(depth); lfo.start(t); lfo.stop(t + dur + 0.05);
+    }
+    [-9, 9].forEach(cents => {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth'; o.detune.value = cents;
+      o.frequency.setValueAtTime(82.4, t); o.frequency.exponentialRampToValueAtTime(329.6, t + dur);
+      if (depth) depth.connect(o.detune);
+      o.connect(f); o.start(t); o.stop(t + dur + 0.05);
+    });
+    f.connect(g); g.connect(drums);
+  }
+  // A short pitched drum (roll kick or tom): a sine dropping from 1.8x to f.
+  function thump(t, f, peak, dur) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(f * 1.8, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.04);
+    decay(g, t, peak, dur);
+    o.connect(g); g.connect(drums); o.start(t); o.stop(t + dur + 0.02);
+  }
+  // The sweep that runs under the whole build-up; called on its first step.
+  function buildSweep(t) {
+    if (buildKind === 1) toneRiser(t, false);
+    else if (buildKind === 2) toneRiser(t, true);
+    else if (buildKind === 4) riser(t, true);
+    else if (buildKind === 0) riser(t);
+  }
+  // One 16th step of the build-up. b = bar 4..7 of the break, i = step in the bar, p = 0..1 through the build-up.
+  function buildStep(t, b, i, p) {
+    const n = b - 4, lastBeats = b === 7 ? i : -1;                   // n = 0..3: which bar of the build-up
+    if (buildKind === 0) {                                           // snare roll; half a beat of silence before the drop
+      const every = n === 0 ? 4 : n === 1 ? 2 : 1;
+      if (i % every === 0 && lastBeats < 14) noiseHit(t, 'bandpass', 1500 + 2000 * p, 1, 0.05 + 0.2 * p, 0.06);
+    } else if (buildKind === 1) {                                    // kick roll; a whole beat of silence before the drop
+      const every = n === 0 ? 4 : n === 1 ? 2 : 1;
+      if (i % every === 0 && lastBeats < 12) thump(t, 48 * (1 + 1.2 * p), 0.35 + 0.3 * p, 0.11);
+    } else if (buildKind === 2) {                                    // claps: 2 and 4, every beat, 8ths, 16ths
+      const hit = n === 0 ? i === 4 || i === 12 : n === 1 ? i % 4 === 0 : n === 2 ? i % 2 === 0 : true;
+      if (hit && lastBeats < 14) noiseHit(t, 'bandpass', 1200, 1, 0.1 + 0.14 * p, 0.11);
+    } else if (buildKind === 3) {                                    // toms, no gap: they run straight into the drop
+      const hit = n === 0 ? i % 4 === 0 : n === 1 ? i % 4 === 0 || i % 4 === 3 : n === 2 ? i % 2 === 0 : true;
+      if (hit) thump(t, 85 + 190 * p + (i % 4 === 3 ? 30 : 0), 0.3 + 0.25 * p, 0.16);
+      if (n === 2 && i === 0) riser(t, false, 32);                   // noise swell over the last two bars
+    } else if (buildKind === 4) {                                    // 8ths, 16ths, then 32nds under the gated noise
+      const every = n < 2 ? 2 : 1;
+      if (i % every === 0 && lastBeats < 14) {
+        noiseHit(t, 'bandpass', 1000 + 5000 * p, 2, 0.05 + 0.16 * p, 0.05);
+        if (n === 3) noiseHit(t + STEP / 2, 'bandpass', 1000 + 5000 * p, 2, 0.04 + 0.12 * p, 0.04);
+      }
+    } else if (buildKind === 5) {                                    // hi-hats only
+      if (lastBeats >= 14) return;
+      if (n > 0 || i % 2 === 0) noiseHit(t, 'highpass', 8500, 1, 0.07 + 0.12 * p, 0.03);
+      if (n === 3) noiseHit(t + STEP / 2, 'highpass', 8500, 1, 0.05 + 0.08 * p, 0.025);
+      if (i % 4 === 2) noiseHit(t, 'highpass', 7000, 1, 0.08 + 0.07 * p, 0.16);
+    } else if (buildKind === 6) {                                    // heartbeat
+      if (n < 3) {
+        if (i === 0 || i === 8) thump(t, 46, 0.4 + 0.25 * p, 0.22);
+        if (i === 3 || i === 11) thump(t, 40, 0.25 + 0.2 * p, 0.2);
+        if (n === 2 && i % 2 === 0) noiseHit(t, 'bandpass', 1800, 4, 0.1 + 0.08 * p, 0.05);
+      } else if (i < 8) {
+        if (i % 4 === 0) thump(t, 46, 0.6, 0.22);
+        noiseHit(t, 'bandpass', 1800, 4, 0.14, 0.05);
+      } else if (i === 14) {                                         // out of the silence: one clap flam
+        noiseHit(t, 'bandpass', 1200, 1, 0.2, 0.03); noiseHit(t + 0.03, 'bandpass', 1200, 1, 0.26, 0.12);
+      }
+    } else {                                                         // shaker and rim
+      if (lastBeats >= 14) return;
+      noiseHit(t, 'highpass', 5000, 1, (i % 2 ? 0.045 : 0.08) * (0.6 + 0.8 * p), 0.04);
+      const rim = n === 0 ? i === 3 || i === 10 : n === 1 ? i === 3 || i === 6 || i === 10 || i === 14
+        : n === 2 ? i % 8 === 0 || i % 8 === 3 || i % 8 === 6 : i % 2 === 0 && i < 12;
+      if (rim) noiseHit(t, 'bandpass', 1800, 4, 0.12 + 0.08 * p, 0.05);
+      if (lastBeats >= 12) noiseHit(t, 'bandpass', 1500, 1, 0.22, 0.07);   // two-hit snare fill
+    }
+  }
+  // The drop: a crash and a falling sub under the first kick.
+  function drop(t) {
+    noiseHit(t, 'highpass', 5000, 1, 0.25, 1.6, drums);
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.8);
+    decay(g, t, 0.5, 0.9);
+    o.connect(g); g.connect(drums); o.start(t); o.stop(t + 1);
+  }
+  function noiseHit(t, type, freq, q, peak, dur, dest, pan) {
+    const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    s.buffer = noise; f.type = type; f.frequency.value = freq; f.Q.value = q;
+    decay(g, t, peak, dur);
+    s.connect(f); f.connect(g); out(g, dest || hatBus, pan);
+    s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+  }
+  // Touch hi-hat: noise plus a few metallic square partials, highpassed with a presence boost.
+  // The envelope starts with a hard spike for punch, then a short tail. tone shifts it brighter/darker.
+  function hat(t, peak, dur, tone, dest, pan) {
+    tone = tone || 1; peak = Math.max(peak, 0.001);
+    const hp = ctx.createBiquadFilter(), pk = ctx.createBiquadFilter(), g = ctx.createGain(), metal = ctx.createGain();
+    hp.type = 'highpass'; hp.frequency.value = 7000 * tone; hp.Q.value = 0.8;
+    pk.type = 'peaking'; pk.frequency.value = 9500 * tone; pk.Q.value = 1.2; pk.gain.value = 7;
+    const src = ctx.createBufferSource(); src.buffer = noise;
+    src.connect(hp); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.02);
+    metal.gain.value = 0.3; metal.connect(hp);
+    for (const fq of [3520, 5310, 8140]) {
+      const o = ctx.createOscillator();
+      o.type = 'square'; o.frequency.value = fq * tone;
+      o.connect(metal); o.start(t); o.stop(t + dur + 0.02);
+    }
+    g.gain.setValueAtTime(peak * 1.3, t);
+    g.gain.exponentialRampToValueAtTime(peak * 0.45, t + 0.006);     // transient spike
+    g.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(dur, 0.012));
+    hp.connect(pk); pk.connect(g); out(g, dest || hatBus, pan);
+  }
+  function bass(t, midi, peak) {
+    const o = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    o.type = 'sawtooth'; o.frequency.value = hz(midi);
+    f.type = 'lowpass'; f.Q.value = 6;
+    f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(110, t + 0.13);
+    decay(g, t, peak, 0.16);
+    o.connect(f); f.connect(g); g.connect(drums); o.start(t); o.stop(t + 0.2);
+  }
+  function blip(t, midi, gain, pan) {                                // pluck: bright triangle + a little saw
+    const f = ctx.createBiquadFilter(), g = ctx.createGain(), mix = ctx.createGain();
+    f.type = 'lowpass'; f.Q.value = 2;
+    f.frequency.setValueAtTime(4500, t); f.frequency.exponentialRampToValueAtTime(700, t + 0.25);
+    decay(g, t, 0.34 * gain, 0.34);
+    const o = ctx.createOscillator(), o2 = ctx.createOscillator();
+    o.type = 'triangle'; o.frequency.value = hz(midi);
+    o2.type = 'sawtooth'; o2.frequency.value = hz(midi); o2.detune.value = 6; mix.gain.value = 0.3;
+    o.connect(f); o2.connect(mix); mix.connect(f); f.connect(g); out(g, layerBus, pan);
+    o.start(t); o2.start(t); o.stop(t + 0.4); o2.stop(t + 0.4);
+  }
+  // Bell: a dark, clangy FM tone, closer to a struck metal pipe than a glockenspiel. The modulator sits
+  // at an inharmonic ratio (1.41) for a hollow, slightly dissonant ring, a sine an octave below adds
+  // body, a low-pass takes off the sparkle, and the pitch sags a little as the note dies away.
+  function bell(t, midi, gain, pan) {
+    const freq = hz(midi), dur = 0.5;
+    const car = ctx.createOscillator(), mod = ctx.createOscillator(), sub = ctx.createOscillator();
+    const idx = ctx.createGain(), subG = ctx.createGain(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    car.frequency.value = freq; mod.frequency.value = freq * 1.41; sub.frequency.value = freq / 2;
+    idx.gain.setValueAtTime(freq * 3, t); idx.gain.exponentialRampToValueAtTime(freq * 0.25, t + 0.22);   // clang, then hollow
+    [car, mod, sub].forEach(o => { o.detune.setValueAtTime(0, t); o.detune.linearRampToValueAtTime(-30, t + dur); });
+    subG.gain.value = 0.5;
+    f.type = 'lowpass'; f.Q.value = 1;
+    f.frequency.setValueAtTime(3800, t); f.frequency.exponentialRampToValueAtTime(1100, t + dur);
+    decay(g, t, 0.26 * gain, dur);
+    mod.connect(idx); idx.connect(car.frequency); car.connect(f); sub.connect(subG); subG.connect(f);
+    f.connect(g); out(g, layerBus, pan);
+    [car, mod, sub].forEach(o => { o.start(t); o.stop(t + dur + 0.05); });
+  }
+  // Trance synth, a sustained voice: played live it sounds for as long as the finger stays down, and
+  // in the loop it is replayed at the length it was held. It is a wide supersaw (seven detuned saws
+  // plus two an octave below) whose filter opens slowly, so the note swells instead of plucking.
+  // It runs through the bus the kick ducks, which gives the classic pumping.
+  const TRANCE_OSCS = [[1, -28], [1, -17], [1, -8], [1, 0], [1, 8], [1, 17], [1, 28], [0.5, -7], [0.5, 7]];   // [octave ratio, detune in cents]
+  function freeze(param, when) {                                     // stop a running ramp where it is
+    if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(when);
+    else { const v = param.value; param.cancelScheduledValues(when); param.setValueAtTime(v, when); }
+  }
+  // Start a sustained voice at time t. With dur it also schedules its own end (loop playback);
+  // without, it keeps sounding until stop() is called (live playing).
+  function sustained(kind, t, midi, pan, level, dur) {
+    const g = ctx.createGain(), filt = ctx.createBiquadFilter(), oscs = [];
+    TRANCE_OSCS.forEach(([ratio, detune]) => {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = hz(midi) * ratio; o.detune.value = detune;
+      o.connect(filt); o.start(t);
+      oscs.push({ o, ratio });
+    });
+    filt.type = 'lowpass'; filt.Q.value = 1.2;
+    filt.frequency.setValueAtTime(500, t);
+    filt.frequency.exponentialRampToValueAtTime(5200, t + (dur ? Math.min(0.6, dur * 0.5) : 0.6));
+    filt.connect(g);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.085 * level, t + 0.06);
+    out(g, layerBus, pan);
+    const voice = {
+      midi,
+      glide(m) {                                                     // slide every oscillator to a new pitch
+        voice.midi = m;
+        oscs.forEach(({ o, ratio }) => o.frequency.setTargetAtTime(hz(m) * ratio, ctx.currentTime, 0.03));
+      },
+      stop(when, live) {                                             // long release tail
+        if (live) { freeze(g.gain, when); freeze(filt.frequency, when); }
+        g.gain.setTargetAtTime(0, when, 0.2);
+        filt.frequency.setTargetAtTime(700, when, 0.3);
+        oscs.forEach(({ o }) => o.stop(when + 1.5));
+      }
+    };
+    if (dur) voice.stop(t + dur, false);
+    return voice;
+  }
+  // Choir: a short sung note, so strokes play melodies with it. Saws go through three band-pass
+  // filters (the formants of a voice). Each note scoops up into its pitch and opens from "oo" to
+  // "ah" as it starts, which is what makes it sound sung, and a vibrato fades in on the tail.
+  function choir(t, midi, gain, pan) {
+    const dur = STEP * 3, end = t + dur + 0.5, f = hz(midi), g = ctx.createGain(), input = ctx.createGain();
+    const lfo = ctx.createOscillator(), depth = ctx.createGain();     // vibrato, in cents
+    lfo.frequency.value = 5.5;
+    depth.gain.setValueAtTime(0, t + 0.12); depth.gain.linearRampToValueAtTime(12, t + 0.3);
+    lfo.connect(depth); lfo.start(t); lfo.stop(end);
+    [[1, -9], [1, 0], [1, 8], [2, 3]].forEach(([ratio, detune]) => {   // [octave ratio, detune in cents]
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth'; o.detune.value = detune;
+      o.frequency.setValueAtTime(f * ratio * 0.94, t);               // scoop: start a semitone flat
+      o.frequency.exponentialRampToValueAtTime(f * ratio, t + 0.07);
+      depth.connect(o.detune); o.connect(input); o.start(t); o.stop(end);
+    });
+    [[420, 760, 4, 1], [900, 1200, 6, 0.6], [2700, 2700, 8, 0.3]].forEach(([from, to, q, lvl]) => {   // formant: Hz at the start, Hz when open, Q, level
+      const bp = ctx.createBiquadFilter(), fg = ctx.createGain();
+      bp.type = 'bandpass'; bp.Q.value = q; fg.gain.value = lvl;
+      bp.frequency.setValueAtTime(from, t); bp.frequency.exponentialRampToValueAtTime(to, t + 0.09);
+      input.connect(bp); bp.connect(fg); fg.connect(g);
+    });
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.24 * gain, t + 0.02);
+    g.gain.setTargetAtTime(0, t + dur, 0.07);
+    out(g, layerBus, pan);
+  }
+  // Vocal chop: a short shouted syllable. One sawtooth "voice" that starts sharp and falls onto the
+  // note, a puff of breath, and three formant filters. Where you touch picks the vowel:
+  // left "oh", middle "ah", right "ey" (which glides from e towards i).
+  // Each formant: [Hz, Hz it glides to, Q, level]. Four formants per vowel, levels falling with height.
+  const VOWELS = [
+    [[430, 430, 5, 1], [820, 820, 9, 0.55], [2550, 2550, 12, 0.14], [3400, 3400, 12, 0.07]],
+    [[760, 760, 5, 1], [1180, 1180, 9, 0.6], [2650, 2650, 12, 0.2], [3500, 3500, 12, 0.1]],
+    [[520, 360, 5, 1], [1900, 2250, 10, 0.5], [2600, 2850, 12, 0.25], [3600, 3600, 12, 0.1]]
+  ];
+  // To sound less like a machine: the source is two slightly detuned saws with the top rolled off
+  // (closer to vocal cords than a raw saw), the hit opens with an "h" of breath that keeps hissing
+  // quietly under the vowel, the mouth "opens" (first formant rises) over the first 50 ms, the pitch
+  // swoops up onto the note and sags at the end, and every hit is a few cents and a little vibrato
+  // different from the last one.
+  function vox(t, midi, gain, pan) {
+    const f = hz(midi) * Math.pow(2, (Math.random() - 0.5) * 0.03), dur = 0.2 + Math.random() * 0.05, end = t + dur + 0.3;
+    const g = ctx.createGain(), input = ctx.createGain(), tilt = ctx.createBiquadFilter(), voice = ctx.createGain();
+    tilt.type = 'lowpass'; tilt.frequency.value = Math.max(900, f * 5); tilt.Q.value = 0.5;
+    const lfo = ctx.createOscillator(), depth = ctx.createGain();     // a little wobble, in cents
+    lfo.frequency.value = 5 + Math.random() * 1.5; depth.gain.value = 10; lfo.connect(depth); lfo.start(t); lfo.stop(end);
+    [-7, 6].forEach(cents => {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth'; o.detune.value = cents;
+      o.frequency.setValueAtTime(f * 0.88, t); o.frequency.exponentialRampToValueAtTime(f * 1.03, t + 0.06);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.12); o.frequency.exponentialRampToValueAtTime(f * 0.93, t + dur + 0.1);
+      depth.connect(o.detune); o.connect(tilt); o.start(t); o.stop(end);
+    });
+    voice.gain.setValueAtTime(0.0001, t); voice.gain.linearRampToValueAtTime(0.6, t + 0.035);   // the voice comes in behind the breath
+    tilt.connect(voice); voice.connect(input);
+    const br = ctx.createBufferSource(), bg = ctx.createGain(), bhp = ctx.createBiquadFilter();   // breath through the same mouth shape
+    br.buffer = noise; br.loop = true; bhp.type = 'highpass'; bhp.frequency.value = 900;
+    bg.gain.setValueAtTime(0.5, t); bg.gain.exponentialRampToValueAtTime(0.05, t + 0.05);
+    br.connect(bhp); bhp.connect(bg); bg.connect(input); br.start(t, Math.random() * 0.5); br.stop(end);
+    VOWELS[pan < -0.23 ? 0 : pan > 0.23 ? 2 : 1].forEach(([from, to, q, lvl], n) => {
+      const bp = ctx.createBiquadFilter(), fg = ctx.createGain();
+      bp.type = 'bandpass'; bp.Q.value = q; fg.gain.value = lvl;
+      bp.frequency.setValueAtTime(n === 0 ? from * 0.65 : from, t);             // jaw opening
+      bp.frequency.linearRampToValueAtTime(from, t + 0.05); bp.frequency.linearRampToValueAtTime(to, t + dur);
+      input.connect(bp); bp.connect(fg); fg.connect(g);
+    });
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(1.1 * gain, t + 0.012);
+    g.gain.setTargetAtTime(0, t + dur * 0.55, 0.06);
+    out(g, layerBus, pan);
+  }
+  // Live playing: one continuous note per finger. Moving up or down glides its pitch. On release the
+  // note rings out, and what was played (where in the bar it started, how long it was held, its last
+  // pitch) joins the loop like any other sound.
+  const heldVoices = new Map();                                      // pointer id -> sounding voice
+  const heldMidi = y => SCALE[pick(y, SCALE.length)] - 12;
+  function holdStart(kind, id, y, pan, hold) {
+    release(id);
+    const now = ctx.currentTime;
+    // the 16th step that is sounding right now (the scheduler runs a little ahead of the clock)
+    const at = ((step - Math.round((next - now) / STEP)) % 16 + 16) % 16;
+    heldVoices.set(id, { kind, voice: sustained(kind, now, heldMidi(y), pan, 1), y, pan, hold, t0: now, step: at });
+  }
+  function slide(id, y) {                                            // finger moved: glide to the new pitch
+    const v = heldVoices.get(id);
+    if (!v) return;
+    v.y = Math.max(0, Math.min(1, y));
+    if (heldMidi(v.y) !== v.voice.midi) v.voice.glide(heldMidi(v.y));
+  }
+  function release(id) {                                             // finger lifted: ring out and join the loop
+    const v = heldVoices.get(id);
+    if (!v) return;
+    heldVoices.delete(id);
+    const now = ctx.currentTime;
+    v.voice.stop(now, true);
+    const len = Math.max(4, Math.min(16, Math.round((now - v.t0) / STEP)));   // at most one bar in the loop
+    addLayer(v.kind, v.hold, v.step, v.y, v.pan, { len });
+  }
+  // Plucked string (Karplus-Strong): a burst of noise circulating in a short delay line that is one
+  // period long, losing a little brightness on every pass. It sounds like a harp or nylon guitar.
+  // The result is rendered once per pitch into a buffer and replayed from a small cache.
+  const pluckCache = new Map();
+  function pluckBuffer(midi) {
+    const key = midi * 2 + rand(2);                                  // two takes per pitch, so repeats vary
+    let buf = pluckCache.get(key);
+    if (buf) return buf;
+    const sr = ctx.sampleRate, n = Math.floor(sr * 1.2);
+    const D = sr / hz(midi) - 0.5, L = Math.floor(D), frac = 1 - (D - L);   // loop delay = one period (the averaging adds half a sample)
+    const line = new Float32Array(L + 1);
+    let lp = 0, peak = 0;
+    for (let i = 0; i <= L; i++) { lp += 0.5 * (Math.random() * 2 - 1 - lp); line[i] = lp; peak = Math.max(peak, Math.abs(lp)); }
+    for (let i = 0; i <= L; i++) line[i] *= 0.6 / (peak || 1);
+    buf = ctx.createBuffer(1, n, sr);
+    const o = buf.getChannelData(0), fade = Math.floor(sr * 0.05);
+    let prev = 0, idx = 0;
+    for (let i = 0; i < n; i++) {
+      const v = line[idx] * (1 - frac) + line[(idx + 1) % (L + 1)] * frac;
+      o[i] = i > n - fade ? v * (n - i) / fade : v;
+      line[idx] = 0.996 * 0.5 * (v + prev); prev = v;
+      idx = (idx + 1) % (L + 1);
+    }
+    pluckCache.set(key, buf);
+    return buf;
+  }
+  function pluck(t, midi, gain, pan) {
+    const src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = pluckBuffer(midi); g.gain.value = 0.5 * gain;
+    src.connect(g); out(g, layerBus, pan); src.start(t);
+  }
+  function stab(t, midi, gain, pan) {                                // short detuned-saw chord (root, fifth, octave)
+    const f = ctx.createBiquadFilter(), g = ctx.createGain();
+    f.type = 'lowpass'; f.Q.value = 3;
+    f.frequency.setValueAtTime(2800, t); f.frequency.exponentialRampToValueAtTime(450, t + 0.16);
+    decay(g, t, 0.15 * gain, 0.24);
+    [0, 7, 12].forEach((semi, n) => {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth'; o.frequency.value = hz(midi - 12 + semi); o.detune.value = (n - 1) * 11;
+      o.connect(f); o.start(t); o.stop(t + 0.28);
+    });
+    f.connect(g); out(g, layerBus, pan);
+  }
+  // Lead: a warm, soft-attack voice (two detuned saws and a sine under a gentle lowpass).
+  function lead(t, midi, gain, pan) {
+    const f = ctx.createBiquadFilter(), g = ctx.createGain(), freq = hz(midi);
+    f.type = 'lowpass'; f.Q.value = 1.5;
+    f.frequency.setValueAtTime(2600, t); f.frequency.exponentialRampToValueAtTime(900, t + 0.3);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.13 * gain, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+    [['sawtooth', -7], ['sawtooth', 7], ['sine', 0]].forEach(([type, detune]) => {
+      const o = ctx.createOscillator();
+      o.type = type; o.frequency.value = freq; o.detune.value = detune;
+      o.connect(f); o.start(t); o.stop(t + 0.42);
+    });
+    f.connect(g); out(g, layerBus, pan);
+  }
+  // Melody: each touch plays a three-note phrase in 8th notes, starting on the touched pitch and
+  // moving through the scale. The phrase is the same every bar, so it sits in the groove like a riff.
+  const PHRASES = [[0, 2, 4], [0, 2, 1], [0, 1, 3], [0, -1, 2]];        // scale steps from the first note
+  function melody(t, L, gain) {
+    const start = pick(L.y, SCALE.length), shape = PHRASES[L.step % PHRASES.length];
+    shape.forEach((offset, k) => {
+      const idx = Math.max(0, Math.min(SCALE.length - 1, start + offset));
+      lead(t + k * 2 * STEP, SCALE[idx], gain * (k === 0 ? 1 : 0.8), L.pan);
+    });
+  }
+  // 303-style voice: two detuned saws, a short upward slide, a resonant filter sweep, then drive.
+  function acidVoice(t, midi, cut, level, dur) {
+    const f = ctx.createBiquadFilter(), g = ctx.createGain(), freq = hz(midi);
+    f.type = 'lowpass'; f.Q.value = 13;
+    f.frequency.setValueAtTime(cut, t); f.frequency.exponentialRampToValueAtTime(Math.max(120, cut * 0.25), t + dur * 0.85);
+    decay(g, t, level, dur);
+    for (const detune of [-9, 9]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth'; o.detune.value = detune;
+      o.frequency.setValueAtTime(freq * 0.75, t); o.frequency.exponentialRampToValueAtTime(freq, t + 0.035);
+      o.connect(f); o.start(t); o.stop(t + dur + 0.02);
+    }
+    f.connect(g); g.connect(acidIn);
+  }
+  // One step of the acid bassline. accent = louder with a harder, faster filter snap;
+  // slide = glide from the previous pitch; hold = keep the gate open into the next (sliding) note.
+  function bassline(t, midi, accent, slide, hold, y, gain) {
+    const freq = hz(midi);
+    if (slide) tb.osc.frequency.setTargetAtTime(freq, t, 0.025);
+    else tb.osc.frequency.setValueAtTime(freq, t);
+    // The resting cutoff drifts over 8 bars like a slow knob sweep and opens up with fast movement.
+    const base = 260 * Math.pow(2, 1.1 + 1.1 * Math.sin(step / 128 * Math.PI * 2) + energy * 1.5 + y * 0.6);
+    const peak = Math.min(9000, base * (accent ? 7 : 3.5));
+    for (const f of [tb.f1, tb.f2]) {
+      f.frequency.cancelScheduledValues(t);
+      f.frequency.setValueAtTime(peak, t);
+      f.frequency.setTargetAtTime(base, t, accent ? 0.04 : 0.07);
+    }
+    tb.vca.gain.cancelScheduledValues(t);
+    tb.vca.gain.setTargetAtTime((accent ? 0.8 : 0.5) * gain, t, 0.003);
+    tb.vca.gain.setTargetAtTime(0, t + STEP * (hold ? 1.05 : 0.55), 0.015);
+  }
+  function acid(t) {                                                 // line driven by wild movement
+    let midi = SCALE[pick(motionY, SCALE.length)] - 12;
+    if (energy > 0.7 && Math.random() < 0.3) midi += 12;             // octave jumps when it gets hectic
+    acidVoice(t, midi, 500 + energy * energy * 3800, 0.3 * (0.5 + 0.5 * energy), STEP * 0.9);   // speed opens the filter
+  }
+  function playLayer(t, L, gain) {
+    const midi = SCALE[pick(L.y, SCALE.length)];
+    if (L.kind === 'note') blip(t, midi, gain, L.pan);
+    else if (L.kind === 'bell') bell(t, midi, gain, L.pan);
+    else if (L.kind === 'stab') stab(t, midi, gain, L.pan);
+    else if (L.kind === 'hat') {                                     // short, hard tick with a mid-range knock under it
+      hat(t, 0.5 * gain, 0.018 + (1 - L.y) * 0.03, 0.8 + L.y * 0.6, dryBus, L.pan);
+      noiseHit(t, 'bandpass', 3000, 1, 0.25 * gain, 0.012, dryBus, L.pan);
+    }
+    else if (L.kind === 'arp') melody(t, L, gain);
+    else if (L.kind === 'trance') sustained(L.kind, t, midi - 12, L.pan, gain, STEP * (L.len || 8));
+    else if (L.kind === 'choir') choir(t, midi, gain, L.pan);
+    else if (L.kind === 'pluck') pluck(t, midi, gain, L.pan);
+    else if (L.kind === 'vox') vox(t, midi - 12, gain, L.pan);
+    else if (L.kind === 'acid2') {
+      const nextStep = (L.step + 1) % 16;
+      const hold = layers.some(n => n.kind === 'acid2' && n.step === nextStep && n.slide);
+      bassline(t, SCALE[pick(L.y, SCALE.length)] - 24 + (L.up || 0), L.accent, L.slide, hold, L.y, gain);
+    }
+    else if (L.kind === 'acid') acidVoice(t, SCALE[pick(L.y, SCALE.length)] - 12, 900 + L.y * 2600, 0.6 * gain, STEP * 1.6);
+  }
+
+  /* ---- arrangement ---- */
+  function newSection() {
+    let b; do b = rand(BASS_PATTERNS.length); while (b === sec.bass);
+    sec = { bass: b, root: ROOTS[rand(ROOTS.length)], hat: rand(3), perc: rand(4), breakdown: Math.random() < 0.5 };
+  }
+  // What a touch adds right now: the manual choice, or the automatic rotation.
+  function currentKind() {
+    if (config.touchMode !== 'auto' && KINDS[config.touchMode]) return config.touchMode;
+    return ROTATION[Math.floor(step / 64) % ROTATION.length];
+  }
+  function refresh() {
+    // In auto mode, mark the button of the element that is currently up.
+    const now = config.touchMode === 'auto' ? currentKind() : '';
+    document.querySelectorAll('#body button[data-kind]').forEach(b => b.classList.toggle('now', b.dataset.kind === now));
+  }
+  // A sound keeps looping if its element is locked, or it was added while "Loop all" is on.
+  const holding = L => !!config.locks[L.kind] || (L.hold && config.keep);
+
+  // Schedule everything that happens on one 16th step.
+  function schedule(t) {
+    // Break button: at the next bar line, jump the bar count to the start of an 8-bar block and begin the break there.
+    if (breakNow && step % 16 === 0) {
+      breakNow = false;
+      if (!inBreak) { step = Math.ceil(step / 128) * 128; breakAt = step / 16; breakForced = true; }
+    }
+    const bar = Math.floor(step / 16), i = step % 16;
+    const on = config.backing;                                       // whole backing track
+    const drumsOn = on && config.kit >= 0;                           // kick, rim/clap, fills, snare roll, drop
+    if (i === 0) {
+      if (bar % 8 === 0) {
+        if (inBreak) { inBreak = false; planBreak(bar); if (drumsOn) drop(t); }   // break over: drop into a new section
+        else if (bar >= breakAt && (config.autoBreak || breakForced)) {
+          inBreak = true; breakForced = false;
+          buildKind = (buildKind + 1 + rand(BUILDS - 1)) % BUILDS;      // a different build-up than last time
+          if (on && Math.random() < 0.25) pad(t, sec.root);             // the held synth chord: only in about one break in four
+        }
+        if (bar >= 8 && !inBreak) newSection();                      // rearrange the track
+      }
+      if (on && inBreak && bar % 8 === 4) buildSweep(t);
+      if (bar % 4 === 0) refresh();
+    }
+    const lastBar = !inBreak && bar >= 8 && bar % 8 === 7;           // final bar of a section
+
+    if (inBreak) {
+      // Break: 4 bars with the kick and bass gone, then a 4-bar build-up into the drop.
+      const b = bar % 8;
+      if (b < 4) { if (on && config.hats && i % 4 === 2) noiseHit(t, 'highpass', 8000, 1, 0.09, 0.06); }
+      else {
+        const p = ((b - 4) * 16 + i) / 64;                           // 0..1 through the build-up
+        if (drumsOn) buildStep(t, b, i, p);
+      }
+    } else {
+      // Drums. Bars 0-7 are an intro where parts enter one by one.
+      if (drumsOn && i % 4 === 0 && !(lastBar && sec.breakdown && i >= 8)) kick(t);
+      if (on && config.hats && bar >= 1 && i % 4 === 2) {
+        if (sec.hat === 1) noiseHit(t, 'highpass', 7000, 1, 0.10, 0.18);          // open hat
+        else noiseHit(t, 'highpass', 8000, 1, 0.15, 0.06);                        // closed hat
+      }
+      const h16 = (sec.hat === 2 ? 0.035 : 0) + energy * 0.06;                    // 16ths, louder when you move fast
+      if (on && config.hats && bar >= 2 && i % 2 === 1 && h16 > 0.01) noiseHit(t, 'highpass', 9500, 1, h16, 0.03);
+      if (drumsOn && bar >= 2) {
+        if (sec.perc === 0 && (i === 4 || i === 12)) noiseHit(t, 'bandpass', 1800, 4, 0.12, 0.05);        // rim
+        if (sec.perc === 1 && (i === 4 || i === 12)) noiseHit(t, 'bandpass', 1200, 1, 0.16, 0.12);        // clap
+        if (sec.perc === 2 && (i === 3 || i === 6 || i === 11 || i === 14)) noiseHit(t, 'bandpass', 2200, 5, 0.10, 0.04);
+      }
+      if (drumsOn && lastBar && i >= 12) noiseHit(t, 'bandpass', 2500, 1, 0.05 + 0.04 * (i - 12), 0.05);             // fill into the next section
+    }
+
+    // Touch sounds living on this step.
+    let notes = 0, dry = 0;
+    for (let k = layers.length - 1; k >= 0; k--) {
+      const L = layers[k], K = KINDS[L.kind];
+      if (L.kind === 'hat') dry++; else if (L.kind !== 'acid2') notes++;
+      if (L.step !== i) continue;
+      playLayer(t, L, Math.pow(K.fade, L.age));                      // held sounds stay at age 0
+      if (!holding(L) && ++L.age >= K.life) layers.splice(k, 1);
+    }
+    // Bassline of the current section (silent during a break).
+    if (on && bar >= 4 && !inBreak && config.bassline) {
+      const off = BASS_PATTERNS[sec.bass][i];
+      if (off !== undefined) bass(t, sec.root + off, sec.bass === 4 ? 0.17 : 0.26);
+    }
+    // Acid line while the pointer is moving quickly: 8ths at first, 16ths when wild.
+    if (energy > 0.15 && (energy > 0.55 || i % 2 === 0)) acid(t);
+
+    // More sounds -> each one quieter, so the total stays level.
+    layerBus.gain.setTargetAtTime(0.9 / Math.sqrt(Math.max(1, notes)), t, 0.1);
+    dryBus.gain.setTargetAtTime(Math.pow(Math.max(1, dry), -0.25), t, 0.1);   // touch hats stay punchy when stacked
+    echoFb.gain.setTargetAtTime(0.36 + energy * 0.2, t, 0.1);
+  }
+
+  // Look-ahead scheduler: a coarse timer queues sample-accurate events slightly early.
+  function tick() {
+    energy += (energyTarget - energy) * (energyTarget > energy ? 0.2 : 0.05);   // quick attack, slow release
+    energyTarget *= 0.8;
+    if (!ctx || ctx.state !== 'running') return;
+    const stepNow = 60 / config.bpm / 4;
+    if (stepNow !== STEP) {                                          // tempo changed: retime the delays too
+      STEP = stepNow;
+      echoDelay.delayTime.setTargetAtTime(STEP * 3, ctx.currentTime, 0.05);
+      rumbleDelay.delayTime.setTargetAtTime(STEP, ctx.currentTime, 0.05);
+    }
+    master.gain.setTargetAtTime(0.8, ctx.currentTime, 0.05);
+    bassShelf.gain.setTargetAtTime((config.bass - 1) * 12, ctx.currentTime, 0.05);
+    if (next < ctx.currentTime) next = ctx.currentTime + 0.05;
+    while (next < ctx.currentTime + 0.12) { schedule(next); next += STEP; step++; }
+  }
+  // Suspend when muted, paused or in a background tab.
+  function sync() {
+    if (!ctx) return;
+    const want = config.sound && !paused && !document.hidden;
+    if (want && ctx.state !== 'running') ctx.resume();
+    else if (!want && ctx.state === 'running') ctx.suspend();
+  }
+  // Browsers only allow audio after a user gesture, so this is called from input events.
+  function unlock() {
+    if (!AC || !config.sound) return;
+    try {
+      // iOS: play like a music app, so the silent/ringer switch doesn't mute it (Safari 16.4+)
+      if (navigator.audioSession) { try { navigator.audioSession.type = 'playback'; } catch (_) {} }
+      if (!ctx) { build(); timer = setInterval(tick, 25); }
+      sync();
+      // iOS only unlocks audio output once a sound starts inside a tap, so start a silent one
+      if (ctx.state !== 'running') {
+        const s = ctx.createBufferSource();
+        s.buffer = ctx.createBuffer(1, 1, 22050); s.connect(ctx.destination); s.start(0);
+      }
+    } catch (_) { ctx = null; }
+  }
+  // Put one sound into the loop on a 16th step (replacing a sound of the same kind already there).
+  function addLayer(kind, hold, stepAt, y, pan, extra) {
+    for (let k = layers.length - 1; k >= 0; k--) if (layers[k].step === stepAt && layers[k].kind === kind) layers.splice(k, 1);
+    layers.push(Object.assign({ kind, hold, step: stepAt, y, pan, age: 0 }, extra));
+    // Cap only the fading sounds, oldest first, so freestyling never pushes out a locked loop.
+    let free = layers.filter(l => !holding(l)).length;
+    for (let k = 0; free > MAX_LAYERS && k < layers.length; k++) if (!holding(layers[k])) { layers.splice(k--, 1); free--; }
+    if (layers.length > 48) layers.shift();
+  }
+  // Add the current touch instrument at this position (y: 0 bottom .. 1 top).
+  // drag = true for the extra sounds added along a stroke; id = the pointer that is touching.
+  // Returns true when the touch started a note that sustains until the finger lifts.
+  function note(x, y, drag, id) {
+    unlock();
+    if (!ctx || !config.sound || paused) return false;
+    const kind = currentKind(), hold = config.keep;
+    const yy = Math.max(0, Math.min(1, y)), pan = Math.max(-1, Math.min(1, (x * 2 - 1) * 0.7));
+    const add = (stepAt, extra) => addLayer(kind, hold, stepAt, yy, pan, extra);
+    const i = step % 16;
+    if (kind === 'trance') {
+      if (drag) return false;                                              // a held note makes no extra notes
+      if (id === undefined) add(i, { len: 8 });
+      else { holdStart(kind, id, yy, pan, hold); return true; }
+    }
+    else if (kind !== 'acid2') add(i);
+    else if (drag) add(i, { slide: true, accent: Math.random() < 0.3 });   // strokes glide from note to note
+    else {
+      add(i, { accent: true });                                            // a tap: accented note...
+      add((i + 3) % 16, { slide: true, up: 12 });                          // ...answered by a slide an octave up
+    }
+    return false;
+  }
+  // Report how wildly the pointer is moving (0..1) and where it is vertically.
+  function motion(amount, y) {
+    if (amount > energyTarget) energyTarget = amount;
+    if (amount > 0.02) motionY = Math.max(0, Math.min(1, y));
+  }
+  ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, unlock, true));
+  document.addEventListener('visibilitychange', sync);
+  // Locking an element brings its sounds that are already fading back to full level.
+  function relock(kind) { layers.forEach(L => { if (L.kind === kind) L.age = 0; }); }
+  // Everything a touch adds plays through one chain: the melodic bus with its dotted-eighth echo, the
+  // dry bus (touch hi-hats, not ducked by the kick) and the acid soft-clipper. Clear fades the whole
+  // chain, echo included, and builds a fresh one, so the next touch sounds at once at full level.
+  function touchChain() {
+    const outG = ctx.createGain(), dryOut = ctx.createGain(), lp = ctx.createBiquadFilter(), wet = ctx.createGain();
+    const shaper = ctx.createWaveShaper(), acidOut = ctx.createGain();
+    const delay = echoDelay = ctx.createDelay(1), fb = echoFb = ctx.createGain();
+    layerBus = ctx.createGain(); dryBus = ctx.createGain(); acidIn = ctx.createGain();
+    delay.delayTime.value = STEP * 3; fb.gain.value = 0.36; wet.gain.value = 0.45;
+    lp.type = 'lowpass'; lp.frequency.value = 2200;
+    layerBus.connect(outG); layerBus.connect(delay); delay.connect(lp); lp.connect(fb); fb.connect(delay); lp.connect(wet); wet.connect(outG);
+    outG.connect(duck); dryBus.connect(dryOut); dryOut.connect(master);
+    shaper.curve = acidCurve; acidOut.gain.value = 0.15;
+    acidIn.connect(shaper); shaper.connect(acidOut); acidOut.connect(layerBus);
+    if (tb) { tb.send.disconnect(); tb.send.connect(layerBus); }     // the acid bassline's echo send follows the new chain
+    chain = { fade(t, seconds) {
+      [outG, dryOut].forEach(g => { g.gain.setValueAtTime(1, t); g.gain.linearRampToValueAtTime(0, t + seconds); });
+      setTimeout(() => { outG.disconnect(); dryOut.disconnect(); fb.disconnect(); }, seconds * 1000 + 300);
+    } };
+  }
+  // Clear: drop every loop and let what is still ringing fade out over one second.
+  function clear() {
+    layers.length = 0;
+    if (!ctx) return;
+    const old = chain;
+    touchChain();
+    old.fade(ctx.currentTime, 1);
+  }
+  // How loud each element's loops still are: element -> 0..1 (1 = just added or held, falling as it fades).
+  function levels() {
+    const o = {};
+    layers.forEach(L => { const v = holding(L) ? 1 : Math.pow(KINDS[L.kind].fade, L.age); if (!(o[L.kind] >= v)) o[L.kind] = v; });
+    return o;
+  }
+  return { note, slide, release, motion, sync, unlock, refresh, relock, levels,
+    startBreak() { unlock(); if (ctx && !inBreak) breakNow = true; },
+    replanBreak() { if (ctx) planBreak(Math.floor(step / 16)); },    // automatic breaks switched back on: count from now
+    get breaking() { return inBreak || breakNow; }, clear, get steps() { return step; } };
+})();
+
+/* ------------------------------------------------------------------ *
+ *  Pointer input (mouse, pen and multi-touch via Pointer Events)
+ * ------------------------------------------------------------------ */
+const pointers = new Map();
+let strokeHue = Math.random();
+
+function uvOf(e) {
+  const r = canvas.getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height];
+}
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  e.preventDefault();
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  const [x, y] = uvOf(e);
+  strokeHue = (strokeHue + 0.618034 + Math.random() * 0.1) % 1;   // every stroke starts on a new hue
+  const p = { x, y, px: x, py: y, hue: strokeHue, moved: false, fresh: true, travel: 0, noteAt: audio.steps };
+  pointers.set(e.pointerId, p);
+  p.held = audio.note(x, y, false, e.pointerId);                  // every touch adds a sound; some sustain while held
+});
+canvas.addEventListener('pointermove', e => {
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  const [x, y] = uvOf(e);
+  p.x = x; p.y = y; p.moved = true;
+  if (p.held) audio.slide(e.pointerId, y);
+});
+function endPointer(e) { pointers.delete(e.pointerId); audio.release(e.pointerId); }
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// Turn this frame's pointer movement into splats along the stroke.
+function applyInput(dt) {
+  const sc = uvScale();
+  pointers.forEach(p => {
+    p.hue = (p.hue + dt * 0.08) % 1;                             // slow hue drift within a stroke
+    const color = styleColor(p.hue);
+    if (p.fresh) {                                               // a tap leaves a small dab
+      p.fresh = false;
+      splat(p.x, p.y, 0, 0, color.map(v => v * 0.35));
+    }
+    if (!p.moved) return;
+    p.moved = false;
+    const dx = p.x - p.px, dy = p.y - p.py;
+    const dist = Math.hypot(dx * sc[0], dy * sc[1]);            // in short-edge units
+    if (dist < 1e-5) return;
+    // Long strokes add another note now and then (at most one per eighth note).
+    p.travel += dist;
+    if (!p.held && p.travel > 0.25 && audio.steps - p.noteAt >= 2) { p.travel = 0; p.noteAt = audio.steps; audio.note(p.x, p.y, true); }
+    const t = Math.min(Math.max(dt, 1 / 120), 1 / 30);
+    const speed = dist / t;
+    audio.motion(Math.min(1, Math.max(0, (speed - 0.6) / 4.5)), p.y);   // wild movement drives the acid line
+    // Fill the gap between samples so fast strokes stay continuous.
+    const sigma = Math.sqrt(config.radius / 200);
+    const n = Math.min(16, Math.max(1, Math.ceil(dist / (sigma * 0.75))));
+    const w = 1 / Math.sqrt(n);
+    // Velocity follows the pointer; dye amount grows with pointer speed.
+    const vx = dx / t * velocity.w * FORCE_GAIN * w, vy = dy / t * velocity.h * FORCE_GAIN * w;
+    const amount = 0.3 * Math.min(1.6, 0.15 + speed * 0.5) * w;
+    const rgb = color.map(v => v * amount);
+    for (let i = 1; i <= n; i++) splat(p.px + dx * i / n, p.py + dy * i / n, vx, vy, rgb);
+    p.px = p.x; p.py = p.y;
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ *  Controls panel
+ * ------------------------------------------------------------------ */
+let paused = false;
+const sliderDefs = [
+  ['dyeDissipation', 'Dye dissipation', 0, 4, 0.05, 2],
+  ['velDissipation', 'Velocity dissipation', 0, 4, 0.05, 2],
+  ['curl', 'Vorticity', 0, 60, 1, 0],
+  ['iterations', 'Pressure iterations', 1, 60, 1, 0],
+  ['radius', 'Splat radius', 0.05, 1, 0.01, 2],
+  ['bass', 'Bass', 0, 2, 0.05, 2, 'soundSliders'],
+  ['bpm', 'BPM', 100, 200, 1, 0, 'soundSliders']
+];
+sliderDefs.forEach(([key, label, min, max, stepV, digits, parent]) => {
+  const row = document.createElement('div'); row.className = 'row';
+  const lab = document.createElement('label'); lab.htmlFor = 's_' + key;
+  const name = document.createElement('span'); name.textContent = label;
+  const out = document.createElement('output'); out.textContent = config[key].toFixed(digits);
+  const input = document.createElement('input');
+  input.type = 'range'; input.id = 's_' + key; input.min = min; input.max = max; input.step = stepV; input.value = config[key];
+  input.addEventListener('input', () => { config[key] = parseFloat(input.value); out.textContent = config[key].toFixed(digits); });
+  lab.append(name, out); row.append(lab, input); $(parent || 'sliders').append(row);
+});
+// Tuning sliders for the two line styles (shown on the Fluid tab while that style is selected).
+const weaveDefs = [
+  ['count', 'Strings', 10, 100, 1, 0],
+  ['tension', 'Tension', 500, 8000, 100, 0],
+  ['home', 'Snap back', 0, 60, 1, 0],
+  ['reach', 'Reach', 0.05, 0.8, 0.01, 2],
+  ['cross', 'Cross-over', 0, 6, 0.1, 1],
+  ['sway', 'Sway', 0, 8, 0.1, 1],
+  ['damping', 'Ripple fade', 0.2, 8, 0.1, 1],
+  ['width', 'Line thickness', 0.2, 2, 0.05, 2],
+  ['bright', 'Brightness', 0.2, 1, 0.01, 2]
+];
+const threadsDefs = [
+  ['count', 'Threads', 60, 900, 10, 0],
+  ['share', 'Threads per stroke', 0.05, 1, 0.05, 2],
+  ['trail', 'Trail length', 0.1, 3, 0.05, 2],
+  ['linger', 'Linger', 0.2, 6, 0.1, 1],
+  ['drift', 'Drift', 0, 5, 0.1, 1],
+  ['spread', 'Spread', 0, 4, 0.1, 1],
+  ['width', 'Line thickness', 0.1, 1.5, 0.05, 2],
+  ['bright', 'Brightness', 0.05, 1, 0.01, 2]
+];
+// Build one slider per setting of a line style, plus its reset button.
+function tuningSliders(defs, values, prefix, parent, resetId) {
+  const defaults = Object.assign({}, values);
+  defs.forEach(([key, label, min, max, stepV, digits]) => {
+    const row = document.createElement('div'); row.className = 'row';
+    const lab = document.createElement('label'); lab.htmlFor = prefix + key;
+    const name = document.createElement('span'); name.textContent = label;
+    const out = document.createElement('output'); out.textContent = values[key].toFixed(digits);
+    const input = document.createElement('input');
+    input.type = 'range'; input.id = prefix + key; input.min = min; input.max = max; input.step = stepV; input.value = values[key];
+    input.addEventListener('input', () => { values[key] = parseFloat(input.value); out.textContent = values[key].toFixed(digits); });
+    lab.append(name, out); row.append(lab, input); $(parent).append(row);
+  });
+  $(resetId).addEventListener('click', e => {
+    defs.forEach(([key]) => { $(prefix + key).value = defaults[key]; $(prefix + key).dispatchEvent(new Event('input')); });
+    e.currentTarget.blur();
+  });
+}
+tuningSliders(weaveDefs, config.weave, 'w_', 'weaveSliders', 'bWeaveReset');
+tuningSliders(threadsDefs, config.threads, 't_', 'threadsSliders', 'bThreadsReset');
+
+// Drift: when enabled, move to a random other style every 20-45 seconds with a slow morph.
+const driftDelay = () => 20000 + Math.random() * 25000;
+let nextDrift = performance.now() + driftDelay();   // first move comes 20-45 seconds after loading
+
+// Style buttons: switching a style loads its look and default sliders, morphing from the old look.
+function setStyle(i, seconds) {
+  nextDrift = performance.now() + driftDelay();                     // any switch restarts the drift timer
+  // Remember the outgoing look so render() can fade from it; the fluid itself carries over.
+  if (gl && dye && i !== config.style) morph = { from: config.style, bloom: config.bloom, shading: config.shading, start: performance.now(), seconds: seconds || MORPH_SECONDS };
+  config.style = i;
+  const st = STYLES[i];
+  ['dyeDissipation', 'velDissipation', 'curl', 'radius'].forEach((key, n) => {
+    const el = $('s_' + key);
+    el.value = st.set[n]; el.dispatchEvent(new Event('input'));
+  });
+  config.bloom = $('bloom').checked = st.bloom;
+  config.shading = $('shading').checked = st.shading;
+  document.querySelectorAll('#styles button').forEach((b, n) => b.setAttribute('aria-pressed', n === i));
+  // The tuning sliders of the line styles (#weaveValues, #threadsValues) stay hidden for now. To bring
+  // them back, show each one here while its style is selected: hidden = st.lines !== 'weave' / 'threads'.
+}
+STYLES.forEach((st, i) => {
+  const b = document.createElement('button');
+  b.textContent = st.name; b.setAttribute('aria-pressed', i === 0);
+  b.addEventListener('click', () => { setStyle(i); b.blur(); });
+  $('styles').append(b);
+});
+
+$('drift').addEventListener('change', e => { config.drift = e.target.checked; nextDrift = performance.now() + 8000; e.target.blur(); });
+setInterval(() => {
+  if (!config.drift || paused || document.hidden || !gl || !dye || performance.now() < nextDrift) return;
+  let i; do i = Math.floor(Math.random() * STYLES.length); while (i === config.style);
+  setStyle(i, 4);
+}, 1000);
+
+['bloom', 'shading'].forEach(key => {
+  $(key).addEventListener('change', e => { config[key] = e.target.checked; e.target.blur(); });
+});
+const uprightPhone = window.matchMedia('(orientation: portrait) and (max-width: 600px)');
+function setPanel(open) {
+  morphCanvas();
+  $('panel').classList.toggle('closed', !open);
+  $('toggle').textContent = open ? 'Hide controls' : 'Controls';
+  $('toggle').setAttribute('aria-expanded', open);
+  syncDock();
+}
+// The canvas stops where the controls begin, so the fluid is never drawn or touched underneath them:
+// above the bottom block on an upright phone (--dock = its height), left of the side panel otherwise
+// (--side = its width, 0 while the controls are hidden).
+function syncDock() {
+  const root = document.documentElement.style, panel = $('panel');
+  root.setProperty('--dock', $('body').offsetHeight + 'px');
+  root.setProperty('--side', (uprightPhone.matches || panel.classList.contains('closed') ? 0 : panel.offsetWidth) + 'px');
+}
+uprightPhone.addEventListener('change', syncDock);
+if (window.ResizeObserver) new ResizeObserver(syncDock).observe($('body'));
+window.addEventListener('resize', syncDock);
+syncDock();
+$('toggle').addEventListener('click', e => { setPanel($('panel').classList.contains('closed')); e.currentTarget.blur(); });
+
+// Sound has no on-screen switch any more; the M key still mutes and unmutes.
+function toggleSound() { config.sound = !config.sound; audio.unlock(); audio.sync(); }
+
+// Tabs: Sound (what a touch adds) and Fluid (simulation settings).
+function showTab(name) {
+  [['Sound', 'paneSound', 'tabSound'], ['Fluid', 'paneFluid', 'tabFluid']].forEach(([n, pane, tab]) => {
+    $(pane).hidden = n !== name;
+    $(tab).setAttribute('aria-selected', n === name);
+  });
+  $('body').classList.toggle('fluid', name === 'Fluid');
+}
+// Upright phone only: the drums half can be minimised into a third tab; the choice is remembered.
+// The pill row sits with the drum controls, or in the bottom row (before Clear) while those are minimised.
+function placePills() {
+  const mini = $('body').classList.contains('nodrums') && uprightPhone.matches;
+  if (mini) $('footA').insertBefore($('pills'), $('bClear')); else $('pillSlot').appendChild($('pills'));
+}
+uprightPhone.addEventListener('change', placePills);
+function setDrums(show, instant) {
+  const block = $('body'), before = block.offsetHeight;
+  morphCanvas();
+  block.classList.toggle('nodrums', !show);
+  placePills();
+  // The block has already jumped to its new height; slide it from where its top edge was, with the
+  // same timing as the canvas, so the block and the visuals move as one.
+  const moved = block.offsetHeight - before;
+  if (!instant && moved && uprightPhone.matches && block.animate)
+    block.animate([{ transform: 'translateY(' + moved + 'px)' }, { transform: 'none' }], { duration: 450, easing: 'cubic-bezier(.4, 0, .2, 1)' });
+  $('drumsMin').setAttribute('aria-expanded', show); $('tabDrums').setAttribute('aria-expanded', show);
+  try { localStorage.setItem('drumsMin', show ? '' : '1'); } catch (e) {}
+  syncDock();
+}
+$('drumsHead').addEventListener('click', () => { if (uprightPhone.matches) setDrums(false); $('drumsMin').blur(); });
+$('tabDrums').addEventListener('click', e => { setDrums(true); e.currentTarget.blur(); });
+try { if (localStorage.getItem('drumsMin')) setDrums(false, true); } catch (e) {}
+$('tabSound').addEventListener('click', e => { showTab('Sound'); e.currentTarget.blur(); });
+$('tabFluid').addEventListener('click', e => { showTab('Fluid'); e.currentTarget.blur(); });
+
+// Element buttons: Auto, or one fixed element chosen by hand.
+// Keyboard: 0 = Auto change, 1-9 then - and = pick the elements in the order of their buttons.
+const KIND_KEYS = { Digit0: 'auto', Digit1: 'pluck', Digit2: 'hat', Digit3: 'vox', Digit4: 'choir', Digit5: 'note', Digit6: 'bell',
+  Digit7: 'arp', Digit8: 'stab', Digit9: 'acid', Minus: 'trance', Equal: 'acid2' };
+function setTouchMode(mode) {
+  config.touchMode = mode;
+  document.querySelectorAll('#body button[data-kind]').forEach(b => b.setAttribute('aria-pressed', b.dataset.kind === mode));
+  audio.refresh();
+}
+// Press and hold an element button to lock (or release) looping for that element.
+function toggleLock(kind) {
+  if (kind === 'auto') return;
+  const on = config.locks[kind] = !config.locks[kind];
+  const btn = document.querySelector('#body button[data-kind="' + kind + '"]');
+  btn.classList.toggle('locked', on);
+  btn.title = on ? 'Locked: sounds added with this keep looping' : '';
+  if (on) audio.relock(kind);
+}
+document.querySelectorAll('#body button[data-kind]').forEach(b => {
+  let timer = 0;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  b.addEventListener('pointerdown', () => {
+    cancel();
+    timer = setTimeout(() => { timer = 0; setTouchMode(b.dataset.kind); toggleLock(b.dataset.kind); }, 500);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, cancel));
+  b.addEventListener('contextmenu', e => e.preventDefault());        // no long-press menu on touch screens
+  b.addEventListener('click', () => { setTouchMode(b.dataset.kind); b.blur(); });
+});
+// An element that is still sounding but is not the selected one glows amber on its button; the glow
+// fades back to the normal button colour in step with the sound. The selected button stays blue.
+const glow = {};
+// The pills. Each one switches only its own part of the backing track.
+let lastKit = 1;                              // the kit the Drums pill returns to
+function setPart(part, on) {
+  if (part === 'drums') config.kit = on ? lastKit : -1; else config[part] = on;
+  document.querySelectorAll('#kits button').forEach(o => o.setAttribute('aria-pressed', +o.dataset.kit === config.kit));
+}
+const partOn = { pDrums: () => config.kit >= 0, pBass: () => config.bassline, pHats: () => config.hats };
+[['pDrums', 'drums'], ['pBass', 'bassline'], ['pHats', 'hats']].forEach(([id, part]) =>
+  $(id).addEventListener('click', e => { setPart(part, !partOn[id]()); e.currentTarget.blur(); }));
+setInterval(() => {
+  if (config.kit >= 0) lastKit = config.kit;
+  Object.keys(partOn).forEach(id => $(id).setAttribute('aria-pressed', partOn[id]()));
+  $('bBreak').setAttribute('aria-pressed', audio.breaking);         // lit from the press until the drop
+  const lv = audio.levels();
+  document.querySelectorAll('#body button[data-kind]').forEach(b => {
+    const k = b.dataset.kind;
+    if (k === 'auto') return;
+    const target = lv[k] || 0, was = glow[k] || 0;
+    const d = glow[k] = target > was ? target : was + (target - was) * 0.1;   // jumps up, eases down
+    const show = d > 0.02 && b.getAttribute('aria-pressed') !== 'true';
+    b.style.backgroundColor = show ? 'rgba(255,170,60,' + (0.06 + 0.5 * d).toFixed(3) + ')' : '';
+    b.style.borderColor = show ? 'rgba(255,170,60,' + (0.2 + 0.75 * d).toFixed(3) + ')' : '';
+  });
+}, 100);
+// Background drum kit buttons. Clicking the active kit again switches the drums off.
+document.querySelectorAll('#kits button').forEach(b => b.addEventListener('click', () => {
+  const n = +b.dataset.kit;
+  config.kit = config.kit === n ? -1 : n;
+  document.querySelectorAll('#kits button').forEach(o => o.setAttribute('aria-pressed', +o.dataset.kit === config.kit));
+  b.blur();
+}));
+// Break button: a tap starts a break now; press and hold switches the automatic breaks on or off.
+{
+  const b = $('bBreak');
+  let timer = 0, held = false;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  b.addEventListener('pointerdown', () => {
+    cancel(); held = false;
+    timer = setTimeout(() => {
+      timer = 0; held = true;
+      config.autoBreak = !config.autoBreak;
+      b.textContent = config.autoBreak ? 'Auto-Break' : 'Break';
+      b.title = config.autoBreak ? 'Tap: break now. Automatic breaks are on (hold to switch off)' : 'Tap: break now. Automatic breaks are off (hold to switch on)';
+      if (config.autoBreak) audio.replanBreak();
+    }, 500);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, cancel));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+  b.addEventListener('click', () => { if (held) held = false; else audio.startBreak(); b.blur(); });
+}
+$('keep').addEventListener('click', e => { config.keep = !config.keep; e.currentTarget.setAttribute('aria-pressed', config.keep); e.currentTarget.blur(); });
+
+function togglePause() { paused = !paused; audio.sync(); }   // Space bar only; the Pause and Burst buttons were removed
+$('bClear').addEventListener('click', e => { if (gl) clearAll(); e.currentTarget.blur(); });
+
+window.addEventListener('keydown', e => {
+  if (!gl || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) togglePause(); }
+  else if (e.code === 'KeyR') burst(6 + Math.floor(Math.random() * 6));
+  else if (e.code === 'KeyC') clearAll();
+  else if (e.code === 'KeyM') toggleSound();
+  else if (KIND_KEYS[e.code]) {
+    const k = KIND_KEYS[e.code];
+    if (e.shiftKey) toggleLock(k); else setTouchMode(k);            // Shift + key locks/releases the loop
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ *  Main loop, FPS counter and automatic quality scaling
+ * ------------------------------------------------------------------ */
+let last = 0, running = false;
+let perfTime = 0, perfFrames = 0, slowWindows = 0, warmup = 1.5;
+
+function trackPerformance(raw) {
+  if (paused || raw > 0.25) return;            // ignore tab switches and pauses
+  if (warmup > 0) { warmup -= raw; return; }   // ignore shader warm-up
+  perfTime += raw; perfFrames++;
+  if (perfTime < 1) return;
+  const fps = perfFrames / perfTime;
+  perfTime = 0; perfFrames = 0;
+  // Two slow seconds in a row: step down the resolution ladder.
+  if (fps < 48 && quality < LADDER.length - 1) {
+    if (++slowWindows >= 2) { quality++; slowWindows = 0; warmup = 1; initFramebuffers(); }
+  } else slowWindows = 0;
+}
+
+function frame(now) {
+  if (!running) return;
+  requestAnimationFrame(frame);
+  const raw = Math.min((now - last) / 1000, 1); last = now;
+  const dt = Math.min(raw, 1 / 30);            // clamp so a hiccup can't destabilise the look
+  if (resizeCanvas()) initFramebuffers();
+  trackPerformance(raw);
+  applyInput(dt);
+  if (!paused) {
+    step(dt);
+    if (linesActive('weave')) stepWeave(dt);
+    if (linesActive('threads')) stepThreads(dt);
+  }
+  render();
+}
+
+function fail(text) {
+  running = false;
+  if (text) $('msgText').textContent = text;
+  $('msg').hidden = false;
+  $('panel').style.display = 'none';
+  canvas.style.display = 'none';
+}
+
+function start() {
+  try {
+    if (!initGL()) return fail();
+    const defs = fmt.linear ? '' : '#define MANUAL_FILTER\n';
+    P = {};
+    for (const k in FRAG) P[k] = makeProgram(FRAG[k], k === 'advect' ? defs : '');
+    P.display = { 0: makeProgram(DISPLAY, '#define STYLE 0\n') };   // Ink is always available
+
+    // One full-screen quad shared by every pass.
+    quadBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+    resizeCanvas();
+    initFramebuffers();
+    burst(5 + Math.floor(Math.random() * 4));    // so the screen isn't empty on load
+  } catch (err) {
+    if (window.console) console.error(err);
+    return fail();
+  }
+  running = true;
+  last = performance.now();
+  requestAnimationFrame(frame);
+}
+
+// If the GPU context is lost (common on mobile after backgrounding), start over when it returns.
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); running = false; });
+canvas.addEventListener('webglcontextrestored', () => {
+  velocity = dye = pressure = divergence = curl = bloom = null; bloomChain = []; simScaleRef = 0;
+  start();
+});
+
+start();
+})();
+</script>
+<script>
+// Offline support: after the first visit the app starts without a connection.
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+</script>
+</body>
+</html>
